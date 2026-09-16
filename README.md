@@ -42,13 +42,18 @@ The dock stays hidden until you ask for it:
 | Action | Result |
 |---|---|
 | Move the mouse to the bottom edge | Dock slides up |
-| `SUPER+CTRL+DOWN` | Open the dock; press again for the next app |
-| `SUPER+CTRL+UP` | Previous app |
-| `SUPER+SHIFT+CTRL+DOWN` | Launch the selected app, or focus it if running |
-| `SUPER+SHIFT+CTRL+UP` | Close the dock |
+| `SUPER+CTRL+DOWN` | Open the dock — and close it again |
+| `SUPER+CTRL+LEFT` / `RIGHT` | Move the selection |
+| `SUPER+CTRL+UP` | Launch the selected app, or focus it if running |
+
+One modifier for everything, so navigating never breaks your hand position.
 
 Duck never takes a keyboard grab, so the rest of the desktop keeps working while
 the dock is open — you can carry on typing into whatever window is focused.
+
+`SUPER+CTRL+LEFT/RIGHT` are Omarchy's grouped-window focus. Duck borrows them
+only while the dock is on screen; with the dock down it hands the keypress back
+to group focus, so that binding still does what it always did.
 
 With the mouse: left-click launches or focuses, middle-click always opens a new
 window, right-click pins or unpins, and dragging an icon reorders the dock.
@@ -134,6 +139,9 @@ Several things behave differently than you might expect, each for a reason:
   every binding onto the last one registered, so all its keys do the same thing.
   Ordinary global bindings on Super combinations are the one mechanism that works
   and takes nothing away from applications.
+- **Duck gives `SUPER+CTRL+LEFT/RIGHT` back when it is not using them.** Rather
+  than quietly claiming Omarchy's grouped-window focus, the handler forwards the
+  keypress to `group.prev` / `group.next` whenever the dock is closed.
 - **Reordering from the keyboard is unbound** for the same reason. Drag an icon,
   or use the arrows in the settings window. `hypr/duck.lua` has commented-out
   bindings if you want them on a Super combination.

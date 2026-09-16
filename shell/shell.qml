@@ -66,9 +66,7 @@ ShellRoot {
         }
     }
 
-    // Opens the dock if it is closed, otherwise advances the selection, so one
-    // key both summons and cycles.
-    DockShortcut { name: "opennext"; action: "opennext" }
+    DockShortcut { name: "toggle"; action: "toggle" }
     DockShortcut { name: "prev"; action: "prev" }
     DockShortcut { name: "next"; action: "next" }
     DockShortcut { name: "moveprev"; action: "moveprev" }

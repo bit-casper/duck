@@ -85,13 +85,19 @@ PanelWindow {
 
     // Navigation, driven by the submap rather than by key events.
     function nav(action) {
-        // Summon-and-cycle: the same key opens the dock and steps through it.
-        if (action === "opennext") {
-            if (!win.keyOpen) {
-                win.show(true);
-                return;
-            }
-            action = "next";
+        if (action === "toggle") {
+            win.toggle();
+            return;
+        }
+
+        // Super+Ctrl+Left/Right belong to Hyprland's grouped-window focus when
+        // the dock is down. Duck borrows them only while it is on screen and
+        // hands the keypress back otherwise, so the original binding still
+        // works rather than being silently taken over.
+        if (!win.keyOpen && (action === "prev" || action === "next")) {
+            Quickshell.execDetached(["hyprctl", "dispatch",
+                action === "prev" ? "hl.dsp.group.prev()" : "hl.dsp.group.next()"]);
+            return;
         }
 
         const count = win.items.length;
