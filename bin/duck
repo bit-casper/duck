@@ -614,7 +614,21 @@ IPC_COMMANDS = {
     "hide": "hide",
     "toggle": "toggle",
     "settings": "settings",
+    "nav": "nav",
 }
+
+
+def leave_submap():
+    """Return Hyprland to its normal keybindings.
+
+    The dock does this itself when it closes, but Escape is bound to this
+    command precisely so there is a way out that does not depend on the dock
+    still being alive.
+    """
+    subprocess.run(
+        ["hyprctl", "dispatch", 'hl.dsp.submap("reset")'],
+        capture_output=True, timeout=IPC_TIMEOUT,
+    )
 
 
 def main():
@@ -626,7 +640,12 @@ def main():
     command, args = argv[0], argv[1:]
 
     if command in IPC_COMMANDS:
-        ipc(IPC_COMMANDS[command], *args)
+        # Quiet for hide: the keyboard has to be handed back even when the dock
+        # is already gone, so a failed call here is not worth an error.
+        quiet = command == "hide"
+        ipc(IPC_COMMANDS[command], *args, quiet=quiet)
+        if command == "hide":
+            leave_submap()
         return
 
     handler = COMMANDS.get(command)

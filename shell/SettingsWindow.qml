@@ -2,28 +2,31 @@ import QtQuick
 import Quickshell
 import Quickshell.Widgets
 
-// Duck's settings. Writes straight to config.json through Config.set(), which the
-// dock is already watching — so every change previews live on the real dock.
+// Duck's settings.
+//
+// Writes straight to config.json through Config.set(), which the dock is
+// already watching, so every change previews live on the real dock.
+//
+// No border is drawn here: this is an ordinary Hyprland window and the
+// compositor already draws the themed border around it. Drawing our own on top
+// is what made this window's edge read heavier than every other window.
 FloatingWindow {
     id: root
 
-    implicitWidth: 460
-    implicitHeight: 620
+    implicitWidth: 520
+    implicitHeight: 720
     title: "Duck Settings"
     color: Theme.background
-
-    // Shared row metrics.
-    readonly property int pad: 18
 
     Rectangle {
         anchors.fill: parent
         color: Theme.background
-        border.width: Theme.borderWidth
-        border.color: Theme.accent
 
         Flickable {
+            id: scroll
+
             anchors.fill: parent
-            anchors.margins: root.pad
+            anchors.margins: Theme.panelPadding
             contentHeight: content.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -31,21 +34,33 @@ FloatingWindow {
             Column {
                 id: content
 
-                width: parent.width
-                spacing: 6
+                width: scroll.width
+                spacing: 0
 
-                Text {
-                    text: "Duck"
-                    color: Theme.foreground
-                    font.pixelSize: 22
-                    font.bold: true
-                }
+                Item {
+                    width: parent.width
+                    implicitHeight: header.implicitHeight + Theme.spacingLg
 
-                Text {
-                    text: "Dock settings · theme: " + Theme.mode
-                    color: Theme.muted
-                    font.pixelSize: 12
-                    bottomPadding: 10
+                    Column {
+                        id: header
+                        x: Theme.rowPaddingX
+                        spacing: Theme.spacingXs
+
+                        Text {
+                            text: "Duck"
+                            color: Theme.foreground
+                            font.family: Theme.menuFontFamily
+                            font.pixelSize: Theme.fontHeading
+                            font.bold: true
+                        }
+
+                        Text {
+                            text: "Dock settings"
+                            color: Qt.darker(Theme.foreground, 1.5)
+                            font.family: Theme.menuFontFamily
+                            font.pixelSize: Theme.fontCaption
+                        }
+                    }
                 }
 
                 // --- appearance ---------------------------------------------
@@ -54,8 +69,8 @@ FloatingWindow {
 
                 SettingsToggle {
                     label: "Bordered"
-                    description: checked ? "Square themed border, solid background"
-                                         : "No border, gradient fade from the bottom"
+                    description: checked ? "Square themed border and solid background, like an ordinary window"
+                                         : "No border, with a gradient fading up from the screen edge"
                     checked: Config.bordered
                     onToggled: Config.set("bordered", !Config.bordered)
                 }
@@ -67,24 +82,25 @@ FloatingWindow {
                     onToggled: Config.set("animate", !Config.animate)
                 }
 
-                SettingsStepper {
-                    label: "Icon size"
-                    value: Config.iconSize
-                    suffix: " px"
-                    minimum: 24
-                    maximum: 96
-                    step: 4
-                    onChanged: function (next) { Config.set("iconSize", next); }
-                }
+                // Icon size is derived, not configured. Say so, so its absence
+                // reads as a decision rather than a missing control.
+                Item {
+                    width: parent.width
+                    implicitHeight: sizeNote.implicitHeight + Theme.spacingXl
 
-                SettingsStepper {
-                    label: "Padding"
-                    value: Config.padding
-                    suffix: " px"
-                    minimum: 0
-                    maximum: 32
-                    step: 2
-                    onChanged: function (next) { Config.set("padding", next); }
+                    Text {
+                        id: sizeNote
+                        x: Theme.rowPaddingX
+                        width: parent.width - Theme.rowPaddingX * 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        wrapMode: Text.WordWrap
+                        color: Qt.darker(Theme.foreground, 1.5)
+                        font.family: Theme.menuFontFamily
+                        font.pixelSize: Theme.fontCaption
+                        text: "Icon size follows your theme's type scale and display scaling — "
+                              + "currently " + Math.max(16, Math.round(24 * (Theme.fontBase / 12) * Theme.spacingScale))
+                              + "px at " + Theme.scale + "× scaling."
+                    }
                 }
 
                 // --- behavior -----------------------------------------------
@@ -101,7 +117,7 @@ FloatingWindow {
 
                 SettingsToggle {
                     label: "Show running apps"
-                    description: checked ? "Unpinned running apps appear at the end"
+                    description: checked ? "Running apps you have not pinned appear after the pinned ones"
                                          : "Only pinned apps are shown"
                     checked: Config.showRunning
                     onToggled: Config.set("showRunning", !Config.showRunning)
@@ -109,7 +125,7 @@ FloatingWindow {
 
                 SettingsToggle {
                     label: "Reveal on bottom edge"
-                    description: checked ? "Dock slides up when the mouse hits the edge"
+                    description: checked ? "Dock slides up when the mouse reaches the edge"
                                          : "Keyboard only (Super+Ctrl+Down)"
                     checked: Config.edgeReveal
                     onToggled: Config.set("edgeReveal", !Config.edgeReveal)
@@ -117,16 +133,20 @@ FloatingWindow {
 
                 SettingsStepper {
                     label: "Reveal delay"
+                    description: "How long the mouse rests at the edge first"
                     value: Config.revealDelay
                     suffix: " ms"
                     minimum: 0
                     maximum: 1000
                     step: 30
+                    enabled: Config.edgeReveal
+                    opacity: Config.edgeReveal ? 1 : 0.4
                     onChanged: function (next) { Config.set("revealDelay", next); }
                 }
 
                 SettingsStepper {
                     label: "Hide delay"
+                    description: "How long the dock waits after the mouse leaves"
                     value: Config.hideDelay
                     suffix: " ms"
                     minimum: 0
@@ -139,57 +159,72 @@ FloatingWindow {
 
                 SettingsSection { title: "Pinned apps" }
 
-                Text {
-                    text: Config.apps.length === 0 ? "Nothing pinned yet — try `duck add ghostty`." : ""
+                Item {
+                    width: parent.width
                     visible: Config.apps.length === 0
-                    color: Theme.muted
-                    font.pixelSize: 12
-                    bottomPadding: 6
+                    implicitHeight: visible ? empty.implicitHeight + Theme.spacingXl : 0
+
+                    Text {
+                        id: empty
+                        x: Theme.rowPaddingX
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Nothing pinned yet — try  duck add ghostty"
+                        color: Qt.darker(Theme.foreground, 1.5)
+                        font.family: Theme.menuFontFamily
+                        font.pixelSize: Theme.fontCaption
+                    }
                 }
 
                 Repeater {
                     model: Config.apps
 
-                    Rectangle {
+                    Item {
                         id: appRow
 
                         required property int index
                         required property string modelData
 
                         readonly property var entry: Apps.entryFor(modelData)
+                        readonly property bool hot: rowHover.hovered
 
                         width: content.width
-                        height: 44
-                        color: Theme.background
+                        implicitHeight: Theme.controlHeight + Theme.spacingXl
 
-                        // Faint backplate that still reads on light themes.
                         Rectangle {
                             anchors.fill: parent
-                            color: Theme.foreground
-                            opacity: 0.05
+                            radius: Theme.cornerRadius
+                            color: appRow.hot ? Theme.fill("hover-cursor") : "transparent"
+
+                            Behavior on color {
+                                enabled: Config.animate
+                                ColorAnimation { duration: 100 }
+                            }
                         }
+
+                        HoverHandler { id: rowHover }
 
                         Row {
                             anchors.left: parent.left
-                            anchors.leftMargin: 8
+                            anchors.leftMargin: Theme.rowPaddingX
                             anchors.right: appControls.left
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Theme.rowPaddingX
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
+                            spacing: Theme.spacingLg
 
                             IconImage {
                                 anchors.verticalCenter: parent.verticalCenter
-                                implicitSize: 24
+                                implicitSize: Theme.fontHeading + Theme.spacingLg
                                 source: appRow.entry ? Icons.source(appRow.entry.icon) : Icons.fallback
                             }
 
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 32
+                                width: parent.width - (Theme.fontHeading + Theme.spacingLg) - Theme.spacingLg
                                 elide: Text.ElideRight
                                 text: appRow.entry ? appRow.entry.name : (appRow.modelData + "  (not found)")
-                                color: appRow.entry ? Theme.foreground : Theme.muted
-                                font.pixelSize: 13
+                                color: appRow.entry ? Theme.foreground : Qt.darker(Theme.foreground, 1.5)
+                                font.family: Theme.menuFontFamily
+                                font.pixelSize: Theme.fontBody
                             }
                         }
 
@@ -197,22 +232,22 @@ FloatingWindow {
                             id: appControls
 
                             anchors.right: parent.right
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Theme.rowPaddingX
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 4
+                            spacing: Theme.spacingSm
 
                             SettingsButton {
-                                text: "\u2190"
+                                text: "←"
                                 enabled: appRow.index > 0
                                 onClicked: Apps.move(appRow.index, appRow.index - 1)
                             }
                             SettingsButton {
-                                text: "\u2192"
+                                text: "→"
                                 enabled: appRow.index < Config.apps.length - 1
                                 onClicked: Apps.move(appRow.index, appRow.index + 1)
                             }
                             SettingsButton {
-                                text: "\u2715"
+                                text: "✕"
                                 danger: true
                                 onClicked: Apps.unpin(appRow.modelData)
                             }
@@ -220,14 +255,18 @@ FloatingWindow {
                     }
                 }
 
-                Item { width: 1; height: 12 }
+                Item { width: 1; height: Theme.spacingHuge }
 
                 Text {
-                    text: "Add apps from the terminal:  duck add <name>\n" +
-                          "Right-click an icon in the dock to unpin it."
-                    color: Theme.muted
-                    font.pixelSize: 11
+                    x: Theme.rowPaddingX
+                    width: content.width - Theme.rowPaddingX * 2
+                    wrapMode: Text.WordWrap
+                    color: Qt.darker(Theme.foreground, 1.6)
+                    font.family: Theme.menuFontFamily
+                    font.pixelSize: Theme.fontCaption
                     lineHeight: 1.4
+                    text: "Add apps with  duck add <name>.  In the dock: drag to reorder, "
+                          + "right-click to pin or unpin, middle-click for a new window."
                 }
             }
         }

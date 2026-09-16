@@ -14,6 +14,10 @@ ShellRoot {
 
     property bool settingsOpen: false
 
+    // If Duck exits while the dock is raised, the submap would otherwise stay
+    // active and the arrow keys would keep calling a process that is gone.
+    Component.onDestruction: Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.submap(\"reset\")"])
+
     // A dock per monitor; Variants keeps them in step as screens come and go.
     Variants {
         id: docks
@@ -36,6 +40,48 @@ ShellRoot {
             if (focused && instances[i].screen && instances[i].screen.name === focused.name) return instances[i];
         }
         return instances.length > 0 ? instances[0] : null;
+    }
+
+
+    // Keyboard navigation while the dock is raised.
+    //
+    // Global shortcuts, not exec bindings: the Hyprland submap in hypr/duck.lua
+    // points its keys at `duck:<name>` and the compositor delivers them straight
+    // into this process. No shell-out per keypress, so navigation is instant --
+    // and unlike a keyboard grab, keys the submap does not bind still type into
+    // whatever window is focused.
+    //
+    // Declared one by one on purpose. A Repeater is a visual type and will not
+    // instantiate its delegates under a non-visual ShellRoot, which silently
+    // leaves the shortcuts unregistered.
+    component DockShortcut: GlobalShortcut {
+        required property string action
+
+        appid: "duck"
+        description: "Duck dock: " + action
+
+        onPressed: {
+            const dock = shell.activeDock();
+            if (dock) dock.nav(action);
+        }
+    }
+
+    // Opens the dock if it is closed, otherwise advances the selection, so one
+    // key both summons and cycles.
+    DockShortcut { name: "opennext"; action: "opennext" }
+    DockShortcut { name: "prev"; action: "prev" }
+    DockShortcut { name: "next"; action: "next" }
+    DockShortcut { name: "moveprev"; action: "moveprev" }
+    DockShortcut { name: "movenext"; action: "movenext" }
+    DockShortcut { name: "activate"; action: "activate" }
+    DockShortcut { name: "unpin"; action: "unpin" }
+
+    GlobalShortcut {
+        appid: "duck"
+        name: "hide"
+        description: "Duck dock: close"
+
+        onPressed: shell.eachDock(function (dock) { dock.hide(); })
     }
 
     LazyLoader {
@@ -78,6 +124,12 @@ ShellRoot {
 
         function settings(): void {
             shell.settingsOpen = true;
+        }
+
+        // Called by the Hyprland submap in hypr/duck.lua, once per keypress.
+        function nav(action: string): void {
+            const dock = shell.activeDock();
+            if (dock) dock.nav(action);
         }
 
         function add(id: string): string {

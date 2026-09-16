@@ -6,9 +6,14 @@ import Quickshell.Io
 
 // Duck's settings, backed by ~/.config/duck/config.json.
 //
-// The file is the single source of truth: the `duck` CLI writes it directly and
-// the settings window writes it through set(). watchChanges picks up either one,
-// so both paths stay in sync without talking to each other.
+// The file is the source of truth: the `duck` CLI writes it directly and the
+// settings window writes it through set(). A watcher picks up either.
+//
+// Writes and the watcher have to be kept from fighting each other. Saving trips
+// the very watcher that reloads the file, and a reload already in flight can
+// deliver pre-write content *after* the write lands — which reverts the value
+// and is what made toggles snap back when flipped quickly. So writes are
+// coalesced, and reloads are ignored while one is settling.
 Singleton {
     id: root
 
@@ -20,49 +25,62 @@ Singleton {
         "showRunning": true,
         "bordered": true,
         "pushWindows": false,
-        "iconSize": 44,
-        "padding": 8,
-        "gap": 10,
+        "edgeReveal": true,
         "revealDelay": 90,
         "hideDelay": 350,
-        "edgeReveal": true,
         "animate": true
     })
 
+    // Settings that used to exist and are now derived from the display scale.
+    // They are dropped on the next write rather than silently honoured.
+    readonly property var retired: ["iconSize", "padding", "gap"]
+
     property var values: defaults
 
-    // Typed accessors so the rest of the shell never deals with missing keys.
     readonly property var apps: values.apps !== undefined ? values.apps : defaults.apps
     readonly property bool showRunning: values.showRunning !== undefined ? values.showRunning : defaults.showRunning
     readonly property bool bordered: values.bordered !== undefined ? values.bordered : defaults.bordered
     readonly property bool pushWindows: values.pushWindows !== undefined ? values.pushWindows : defaults.pushWindows
-    readonly property int iconSize: values.iconSize !== undefined ? values.iconSize : defaults.iconSize
-    readonly property int padding: values.padding !== undefined ? values.padding : defaults.padding
-    readonly property int gap: values.gap !== undefined ? values.gap : defaults.gap
+    readonly property bool edgeReveal: values.edgeReveal !== undefined ? values.edgeReveal : defaults.edgeReveal
     readonly property int revealDelay: values.revealDelay !== undefined ? values.revealDelay : defaults.revealDelay
     readonly property int hideDelay: values.hideDelay !== undefined ? values.hideDelay : defaults.hideDelay
-    readonly property bool edgeReveal: values.edgeReveal !== undefined ? values.edgeReveal : defaults.edgeReveal
     readonly property bool animate: values.animate !== undefined ? values.animate : defaults.animate
 
     signal changed()
 
-    function clone(o) {
-        return JSON.parse(JSON.stringify(o));
+    property string lastWritten: ""
+
+    function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    function serialize(value) {
+        return JSON.stringify(value, null, 2) + "\n";
     }
 
     function set(key, value) {
         const next = clone(root.values);
         next[key] = value;
-        root.values = next;
-        write();
+        apply(next);
     }
 
     function setApps(list) {
         set("apps", list);
     }
 
+    // In-memory state updates immediately so the UI never lags a click; the
+    // disk write is coalesced behind a short timer.
+    function apply(next) {
+        root.values = next;
+        root.changed();
+        writeTimer.restart();
+    }
+
     function write() {
-        file.setText(JSON.stringify(root.values, null, 2) + "\n");
+        writeTimer.stop();
+        root.lastWritten = serialize(root.values);
+        settleTimer.restart();
+        file.setText(root.lastWritten);
     }
 
     function parse(text) {
@@ -71,18 +89,34 @@ Singleton {
             parsed = JSON.parse(text);
             if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) parsed = {};
         } catch (e) {
-            // A half-written or hand-mangled file should never take the dock down;
-            // fall back to defaults and leave the file alone for the user to fix.
+            // A half-written or hand-edited file should never take the dock
+            // down; fall back to defaults and leave the file for the user.
             console.warn("duck: config.json is not valid JSON, using defaults:", e);
             parsed = {};
         }
 
         const merged = clone(root.defaults);
-        for (const key in parsed) merged[key] = parsed[key];
+        for (const key in parsed) {
+            if (root.retired.indexOf(key) !== -1) continue;
+            merged[key] = parsed[key];
+        }
         if (!Array.isArray(merged.apps)) merged.apps = [];
 
         root.values = merged;
         root.changed();
+    }
+
+    Timer {
+        id: writeTimer
+        interval: 60
+        onTriggered: root.write()
+    }
+
+    // How long after a write to keep ignoring reloads. Covers the watcher
+    // event our own write causes, plus any read already in flight.
+    Timer {
+        id: settleTimer
+        interval: 300
     }
 
     FileView {
@@ -94,12 +128,23 @@ Singleton {
         printErrors: false
 
         onFileChanged: reload()
-        onLoaded: root.parse(text())
+
+        onLoaded: {
+            const incoming = text();
+
+            // Our own write echoing back through the watcher.
+            if (incoming === root.lastWritten) return;
+
+            // A read that started before the write landed would hand back stale
+            // content and undo it.
+            if (settleTimer.running) return;
+
+            root.parse(incoming);
+        }
+
         onLoadFailed: function (error) {
             // Usually just means the file does not exist yet. Run on defaults
-            // rather than writing one back: writing from inside a load callback
-            // can ping-pong with the file watcher that the write itself trips.
-            // The installer and the `duck` CLI both create the file.
+            // rather than writing one back from inside a load callback.
             root.values = root.clone(root.defaults);
             root.changed();
         }

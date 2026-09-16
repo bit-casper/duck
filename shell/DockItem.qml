@@ -4,45 +4,34 @@ import Quickshell.Widgets
 
 // One app in the dock. Purely presentational — the dock owns selection, drag
 // state and click handling so that reordering never destroys a live delegate.
+//
+// Hover and selection use Omarchy's control-state tokens, so the highlight is
+// the same treatment its own panels and menus use.
 Item {
     id: root
 
     required property var item
-    property int iconSize: 44
+    property int iconSize: 24
     property bool selected: false
     property bool hovered: false
     property bool dragging: false
 
-    implicitWidth: iconSize + 12
-    implicitHeight: iconSize + 12
+    implicitWidth: iconSize + Theme.spacingXxl
+    implicitHeight: iconSize + Theme.spacingXxl
 
+    readonly property string state: selected ? "selected" : (hovered ? "hover-cursor" : "normal")
     readonly property bool active: selected || hovered
 
-    // Hover/selection backplate.
     Rectangle {
         anchors.fill: parent
-        radius: 0
-        color: Theme.foreground
-        opacity: root.active ? (root.selected ? 0.16 : 0.09) : 0
+        radius: Theme.cornerRadius
+        color: root.active ? Theme.fill(root.state) : "transparent"
+        border.width: root.active ? Theme.borderWidthFor(root.state) : 0
+        border.color: Theme.border(root.state)
 
-        Behavior on opacity {
+        Behavior on color {
             enabled: Config.animate
-            NumberAnimation { duration: 110 }
-        }
-    }
-
-    // Keyboard selection gets a visible outline, since the fill alone is subtle.
-    Rectangle {
-        anchors.fill: parent
-        color: "transparent"
-        border.width: 1
-        border.color: Theme.accent
-        opacity: root.selected ? 0.8 : 0
-        visible: opacity > 0
-
-        Behavior on opacity {
-            enabled: Config.animate
-            NumberAnimation { duration: 110 }
+            ColorAnimation { duration: 110 }
         }
     }
 
@@ -77,31 +66,32 @@ Item {
         color: "transparent"
         border.width: 1
         border.color: Theme.muted
+        radius: Theme.cornerRadius
 
         Text {
             anchors.centerIn: parent
             text: "?"
             color: Theme.muted
+            font.family: Theme.fontFamily
             font.pixelSize: parent.height * 0.7
         }
     }
 
-    // Running indicator.
+    // Running indicator: one dot per window, up to three.
     Row {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 1
-        spacing: 3
+        spacing: Theme.spacingXs
         visible: root.item.running && !root.dragging
 
         Repeater {
-            // Up to three dots, so two windows read differently from one.
             model: Math.min(root.item.windows ? root.item.windows.length : 0, 3)
 
             Rectangle {
                 width: 3
                 height: 3
-                radius: 1.5
+                radius: Theme.cornerRadius > 0 ? 1.5 : 0
                 color: Theme.accent
             }
         }

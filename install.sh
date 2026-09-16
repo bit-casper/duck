@@ -2,8 +2,15 @@
 #
 # Installs Duck for the current user.
 #
-# Everything is symlinked back to this repo, so editing the source here takes
-# effect immediately — Quickshell hot-reloads the QML on save.
+# Footprint, in full:
+#   ~/.config/quickshell/duck   symlink to this repo's shell/
+#   ~/.local/bin/duck           symlink to this repo's bin/duck
+#   ~/.config/hypr/duck.lua     Duck's Hyprland config (keybinding, rules, autostart)
+#   ~/.config/hypr/hyprland.lua one `require` line between BEGIN/END markers
+#   omarchy-menu.jsonc          Duck's menu rows, between BEGIN/END markers
+#   ~/.config/duck/config.json  settings
+#
+# ./uninstall.sh removes every one of them. Nothing else is modified.
 
 set -euo pipefail
 
@@ -11,7 +18,11 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
 BIN_DIR="$HOME/.local/bin"
 HYPR_DIR="$HOME/.config/hypr"
-BINDING_KEY="SUPER + CTRL + DOWN"
+MENU_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/duck"
+
+# shellcheck source=lib/config-blocks.sh
+source "$REPO/lib/config-blocks.sh"
 
 say() { printf '  %s\n' "$*"; }
 
@@ -19,79 +30,79 @@ link() {
   local src="$1" dest="$2"
 
   if [[ -L "$dest" ]]; then
-    local current
-    current="$(readlink -f "$dest" || true)"
-    [[ "$current" == "$(readlink -f "$src")" ]] && { say "ok      $dest"; return; }
+    if [[ "$(readlink -f "$dest" || true)" == "$(readlink -f "$src")" ]]; then
+      say "ok       $dest"
+      return
+    fi
     rm "$dest"
   elif [[ -e "$dest" ]]; then
     mv "$dest" "$dest.bak.$(date +%s)"
-    say "backed up existing $dest"
+    say "backed up $dest"
   fi
 
   ln -s "$src" "$dest"
-  say "linked  $dest -> $src"
-}
-
-# Appends a block to a Hyprland Lua config, but only once.
-append_once() {
-  local file="$1" marker="$2" block="$3"
-
-  [[ -f "$file" ]] || touch "$file"
-
-  if grep -qF "$marker" "$file"; then
-    say "ok      $file already configured"
-    return
-  fi
-
-  cp "$file" "$file.bak.$(date +%s)"
-  printf '\n%s\n' "$block" >>"$file"
-  say "updated $file"
+  say "linked   $dest"
 }
 
 echo "Installing Duck from $REPO"
-
-mkdir -p "$QS_DIR" "$BIN_DIR" "$HOME/.config/duck"
+mkdir -p "$QS_DIR" "$BIN_DIR" "$HYPR_DIR" "$CONF_DIR"
 
 link "$REPO/shell" "$QS_DIR/duck"
 link "$REPO/bin/duck" "$BIN_DIR/duck"
 
-# Seed a config so the first launch has something to show.
-if [[ ! -f "$HOME/.config/duck/config.json" ]]; then
-  cat >"$HOME/.config/duck/config.json" <<'JSON'
+# Earlier versions appended separate blocks to three different files. Fold them
+# into the single owned file so an uninstall has one thing to undo.
+migrated=0
+for file in bindings.lua autostart.lua hyprland.lua; do
+  if [[ -f "$HYPR_DIR/$file" ]] && hypr_has_legacy "$HYPR_DIR/$file"; then
+    hypr_strip_legacy "$HYPR_DIR/$file"
+    say "migrated $file (removed Duck's old inline block)"
+    migrated=1
+  fi
+done
+[[ $migrated -eq 1 ]] && say "         Duck's Hyprland config now lives in hypr/duck.lua"
+
+if [[ -f "$HYPR_DIR/duck.lua" ]]; then
+  say "kept     $HYPR_DIR/duck.lua (yours; not overwritten)"
+else
+  cp "$REPO/hypr/duck.lua" "$HYPR_DIR/duck.lua"
+  say "created  $HYPR_DIR/duck.lua"
+fi
+
+if hypr_has_block "$HYPR_DIR/hyprland.lua"; then
+  say "ok       hyprland.lua already loads Duck"
+else
+  hypr_add_block "$HYPR_DIR/hyprland.lua"
+  say "updated  hyprland.lua (one require line, between markers)"
+fi
+
+# Adds a searchable "Duck" entry to the Omarchy menu (Super+Space).
+if menu_has_block "$MENU_FILE"; then
+  say "ok       Omarchy menu already has Duck"
+elif [[ -d "$(dirname "$MENU_FILE")" ]]; then
+  menu_add_block "$MENU_FILE"
+  say "updated  Omarchy menu (Super+Space -> search \"Duck\")"
+else
+  say "skipped  Omarchy menu (no extensions directory)"
+fi
+
+if [[ -f "$CONF_DIR/config.json" ]]; then
+  say "kept     $CONF_DIR/config.json"
+else
+  cat >"$CONF_DIR/config.json" <<'JSON'
 {
   "apps": [],
   "showRunning": true,
   "bordered": true,
   "pushWindows": false,
-  "iconSize": 44,
-  "padding": 8,
-  "gap": 10,
+  "edgeReveal": true,
   "revealDelay": 90,
   "hideDelay": 350,
-  "edgeReveal": true,
   "animate": true
 }
 JSON
-  say "created ~/.config/duck/config.json"
+  say "created  $CONF_DIR/config.json"
 fi
-
-append_once "$HYPR_DIR/bindings.lua" "duck toggle" \
-"-- Duck dock: raise the dock and take keyboard control.
-o.bind(\"$BINDING_KEY\", \"Toggle Duck dock\", \"duck toggle\")"
-
-append_once "$HYPR_DIR/autostart.lua" "qs -c duck" \
-'-- Duck dock
-o.launch_on_start("qs -c duck")'
-
-# The settings window is an ordinary toplevel, so without a rule Hyprland tiles
-# it into the current layout instead of showing it as a dialog.
-append_once "$HYPR_DIR/hyprland.lua" "Duck Settings" \
-'-- Duck: float the dock settings window.
-o.window({ class = "^org\\.quickshell$", title = "^Duck Settings$" }, {
-  float = true,
-  center = true,
-  size = { 520, 720 },
-})'
 
 if command -v hyprctl >/dev/null 2>&1; then
   hyprctl reload >/dev/null 2>&1 || true
@@ -100,11 +111,12 @@ if command -v hyprctl >/dev/null 2>&1; then
     echo
     echo "Hyprland reported config errors:"
     echo "$errors"
+    exit 1
   fi
 fi
 
 echo
 echo "Installed. Next:"
-echo "  duck add ghostty        # pin an app"
-echo "  duck start              # run the dock"
-echo "  $BINDING_KEY   # raise it"
+echo "  duck add ghostty      # pin an app"
+echo "  duck start            # run the dock"
+echo "  SUPER+CTRL+DOWN       # raise it"

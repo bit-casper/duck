@@ -182,12 +182,20 @@ Singleton {
     // --- mutations, all routed through Config so the JSON file stays canonical ---
 
     function pin(id) {
+        return pinAt(id, Config.apps.length);
+    }
+
+    // Pin at a specific position. Dragging a running-but-unpinned icon lands
+    // here: it has no stored position yet, so the drop decides it.
+    function pinAt(id, index) {
         const entry = entryFor(id);
         const resolved = entry ? entry.id : id;
         const list = Config.apps.slice();
 
         if (list.indexOf(resolved) !== -1) return false;
-        list.push(resolved);
+
+        const target = Math.max(0, Math.min(list.length, index));
+        list.splice(target, 0, resolved);
         Config.setApps(list);
         return true;
     }
