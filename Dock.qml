@@ -48,6 +48,9 @@ PanelWindow {
 
     // Matches the gap every ordinary window keeps from the screen edge.
     readonly property int gap: duck.hypr.windowGap
+    // Where the dock body ends inside the borderless fade, which runs a gap
+    // taller than the body so it can reach the screen edge.
+    readonly property real fadeEnd: dockHeight / (dockHeight + gap)
     // Reserved above the dock so tooltips render inside the panel surface.
     readonly property int tipHeight: Style.spacing.huge + Style.font.body + Style.spacing.lg
 
@@ -283,14 +286,30 @@ PanelWindow {
                 }
 
                 // Borderless: no chrome, just a fade up from the screen edge.
+                //
+                // The window gap belongs to the bordered dock, which has to sit
+                // exactly where a window would. A fade has no such reason to hold
+                // off the edges, and keeping the inset here left an unshaded
+                // strip of desktop along the bottom and sides of the screen.
                 Rectangle {
                     anchors.fill: parent
+                    anchors.leftMargin: -win.gap
+                    anchors.rightMargin: -win.gap
+                    anchors.bottomMargin: -win.gap
                     visible: !win.config.bordered
-                    radius: Style.cornerRadius
 
+                    // Only the top corners are ever visible; rounding the two
+                    // that sit on the screen edge would notch the shading.
+                    topLeftRadius: Style.cornerRadius
+                    topRightRadius: Style.cornerRadius
+
+                    // Scaled so the fade across the dock body reads the same as
+                    // it did before the gap was covered, then held steady over
+                    // the last stretch down to the edge.
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.0) }
-                        GradientStop { position: 0.55; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.65) }
+                        GradientStop { position: 0.55 * win.fadeEnd; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.65) }
+                        GradientStop { position: win.fadeEnd; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.95) }
                         GradientStop { position: 1.0; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.95) }
                     }
                 }
