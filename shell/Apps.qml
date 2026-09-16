@@ -1,0 +1,242 @@
+pragma Singleton
+
+import QtQuick
+import Quickshell
+import Quickshell.Wayland
+
+// Turns the pinned-id list plus the compositor's window list into the dock model.
+//
+// Passing every dependency as an explicit argument to buildItems() is what makes
+// `items` re-evaluate when apps are pinned, a window opens, or the setting flips.
+Singleton {
+    id: root
+
+    // DesktopEntries fills in asynchronously after startup, one entry at a time.
+    // It is passed through as an explicit dependency so `items` re-resolves as
+    // entries arrive — without it the dock renders placeholder icons forever.
+    readonly property var entries: DesktopEntries.applications.values
+
+    readonly property var items: buildItems(Config.apps, Config.showRunning,
+                                            ToplevelManager.toplevels.values, entries,
+                                            Icons.index)
+
+    // Desktop ids, window app-ids and WM_CLASS values disagree about case and
+    // reverse-DNS prefixes, so compare on a flattened form.
+    function normalize(value) {
+        if (!value) return "";
+        return value.toString().toLowerCase().replace(/\.desktop$/, "");
+    }
+
+    function lastSegment(value) {
+        const flat = normalize(value);
+        const dot = flat.lastIndexOf(".");
+        return dot === -1 ? flat : flat.substring(dot + 1);
+    }
+
+
+    // Omarchy runs many "apps" as browser PWAs. Their window app-id looks like
+    // `brave-discord.gg__tXFUdasqhY-Default`, which matches no desktop file, so
+    // they would all collapse onto the generic icon. Recover the site from the
+    // app-id and find the webapp entry that launches it.
+    function webAppEntry(appId) {
+        const match = /^(?:brave|chrome|chromium|google-chrome|msedge)-([a-z0-9.-]+?)(?:__[^-]*)?-(?:default|profile.*)$/
+            .exec(normalize(appId));
+        if (!match) return null;
+
+        const host = match[1];
+        // `discord.gg` and `discord.com` are the same app to a person.
+        const label = host.split(".")[0];
+        const all = DesktopEntries.applications.values;
+        let loose = null;
+
+        for (let i = 0; i < all.length; i++) {
+            const entry = all[i];
+            const exec = (entry.execString || entry.command || "").toString().toLowerCase();
+
+            if (exec.indexOf(host) !== -1) return entry;
+            if (!loose && label.length > 2) {
+                if (normalize(entry.name) === label) loose = entry;
+                else if (exec.indexOf("//" + label + ".") !== -1) loose = entry;
+                else if (exec.indexOf("//www." + label + ".") !== -1) loose = entry;
+            }
+        }
+
+        return loose;
+    }
+
+    function entryFor(id) {
+        if (!id) return null;
+
+        const direct = DesktopEntries.byId(id);
+        if (direct) return direct;
+
+        // heuristicLookup misses reverse-DNS ids entirely, so search the model.
+        // Tolerates `ghostty` for `com.mitchellh.ghostty`, and window app-ids
+        // whose case does not match the desktop file.
+        const target = normalize(id);
+        const tail = lastSegment(id);
+        const all = DesktopEntries.applications.values;
+        let tailMatch = null;
+
+        for (let i = 0; i < all.length; i++) {
+            const entry = all[i];
+            if (normalize(entry.id) === target) return entry;
+            if (entry.startupClass && normalize(entry.startupClass) === target) return entry;
+            if (!tailMatch && lastSegment(entry.id) === tail) tailMatch = entry;
+        }
+
+        if (tailMatch) return tailMatch;
+        return webAppEntry(id);
+    }
+
+    function matches(entry, appId) {
+        if (!entry || !appId) return false;
+        const target = normalize(appId);
+        if (normalize(entry.id) === target) return true;
+        if (entry.startupClass && normalize(entry.startupClass) === target) return true;
+        // Last resort: `ghostty` should still match `com.mitchellh.ghostty`.
+        return lastSegment(entry.id) === lastSegment(appId);
+    }
+
+    // Quickshell surfaces are shell chrome, not apps — Duck's own settings
+    // window would otherwise show up as an icon in Duck's own dock.
+    function isShellWindow(toplevel) {
+        return normalize(toplevel.appId) === "org.quickshell";
+    }
+
+    function buildItems(pinnedIds, showRunning, toplevels, entries, iconIndex) {
+        const result = [];
+        const claimed = [];
+        const windows = [];
+
+        const all = toplevels || [];
+        for (let i = 0; i < all.length; i++) {
+            if (!isShellWindow(all[i])) windows.push(all[i]);
+        }
+
+        for (let i = 0; i < pinnedIds.length; i++) {
+            const id = pinnedIds[i];
+            const entry = entryFor(id);
+            const mine = [];
+
+            for (let w = 0; w < windows.length; w++) {
+                if (matches(entry, windows[w].appId)) {
+                    mine.push(windows[w]);
+                    claimed.push(windows[w]);
+                }
+            }
+
+            result.push({
+                "key": "pin:" + id,
+                "id": id,
+                "entry": entry,
+                "name": entry ? entry.name : id,
+                "icon": Icons.source(entry ? entry.icon : ""),
+                "pinned": true,
+                "windows": mine,
+                "running": mine.length > 0,
+                // Unresolvable ids still render, so a typo is visible rather than silent.
+                "missing": entry === null
+            });
+        }
+
+        if (!showRunning) return result;
+
+        // Group the leftover windows by app so five terminals share one dock icon.
+        const groups = {};
+        const order = [];
+
+        for (let w = 0; w < windows.length; w++) {
+            const top = windows[w];
+            if (claimed.indexOf(top) !== -1) continue;
+
+            const key = normalize(top.appId) || "unknown";
+            if (!groups[key]) {
+                groups[key] = [];
+                order.push(key);
+            }
+            groups[key].push(top);
+        }
+
+        for (let i = 0; i < order.length; i++) {
+            const key = order[i];
+            const group = groups[key];
+            const entry = entryFor(group[0].appId);
+
+            result.push({
+                "key": "run:" + key,
+                "id": entry ? entry.id : group[0].appId,
+                "entry": entry,
+                "name": entry ? entry.name : (group[0].title || group[0].appId),
+                "icon": Icons.source(entry ? entry.icon : ""),
+                "pinned": false,
+                "windows": group,
+                "running": true,
+                "missing": false
+            });
+        }
+
+        return result;
+    }
+
+    // --- mutations, all routed through Config so the JSON file stays canonical ---
+
+    function pin(id) {
+        const entry = entryFor(id);
+        const resolved = entry ? entry.id : id;
+        const list = Config.apps.slice();
+
+        if (list.indexOf(resolved) !== -1) return false;
+        list.push(resolved);
+        Config.setApps(list);
+        return true;
+    }
+
+    function unpin(id) {
+        const entry = entryFor(id);
+        const resolved = entry ? entry.id : id;
+        const list = Config.apps.slice();
+
+        let index = list.indexOf(resolved);
+        if (index === -1) index = list.indexOf(id);
+        if (index === -1) return false;
+
+        list.splice(index, 1);
+        Config.setApps(list);
+        return true;
+    }
+
+    function move(from, to) {
+        const list = Config.apps.slice();
+        if (from < 0 || from >= list.length) return false;
+
+        const clamped = Math.max(0, Math.min(list.length - 1, to));
+        if (clamped === from) return false;
+
+        list.splice(clamped, 0, list.splice(from, 1)[0]);
+        Config.setApps(list);
+        return true;
+    }
+
+    // Clicking a dock icon: focus what is already open, otherwise launch it.
+    function activate(item) {
+        if (item.windows && item.windows.length > 0) {
+            // Cycle when the app's own window already has focus.
+            let index = 0;
+            for (let i = 0; i < item.windows.length; i++) {
+                if (item.windows[i].activated) {
+                    index = (i + 1) % item.windows.length;
+                    break;
+                }
+            }
+            item.windows[index].activate();
+            return;
+        }
+        launch(item);
+    }
+
+    function launch(item) {
+        if (item.entry) item.entry.execute();
+        else console.warn("duck: no desktop entry for", item.id);
+    }
+}

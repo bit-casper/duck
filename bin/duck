@@ -1,0 +1,639 @@
+#!/usr/bin/env python3
+"""duck — command line control for the Duck dock.
+
+Pinned apps and settings live in ~/.config/duck/config.json, which the running
+dock watches. Commands that change configuration write that file directly, so
+they work identically whether or not the dock is running. Only the commands that
+act on a live window (show/hide/toggle/settings) need IPC.
+"""
+
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import time
+import sys
+
+CONFIG_NAME = "duck"
+CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "duck")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+
+DEFAULTS = {
+    "apps": [],
+    "showRunning": True,
+    "bordered": True,
+    "pushWindows": False,
+    "iconSize": 44,
+    "padding": 8,
+    "gap": 10,
+    "revealDelay": 90,
+    "hideDelay": 350,
+    "edgeReveal": True,
+    "animate": True,
+}
+
+
+# --- output helpers ---------------------------------------------------------
+
+def die(msg, code=1):
+    print(f"duck: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def info(msg):
+    print(msg)
+
+
+# --- config -----------------------------------------------------------------
+
+def load():
+    cfg = dict(DEFAULTS)
+    try:
+        with open(CONFIG_PATH) as fh:
+            parsed = json.load(fh)
+        if isinstance(parsed, dict):
+            cfg.update(parsed)
+    except FileNotFoundError:
+        pass
+    except json.JSONDecodeError as exc:
+        die(f"{CONFIG_PATH} is not valid JSON ({exc}); fix or delete it")
+
+    if not isinstance(cfg.get("apps"), list):
+        cfg["apps"] = []
+    return cfg
+
+
+def save(cfg):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    # Write-then-rename so the dock's file watcher never sees a partial file.
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(cfg, fh, indent=2)
+        fh.write("\n")
+    os.replace(tmp, CONFIG_PATH)
+
+
+# --- desktop entries --------------------------------------------------------
+
+def desktop_dirs():
+    dirs = [os.path.join(os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")), "applications")]
+    for base in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
+        if base:
+            dirs.append(os.path.join(base, "applications"))
+    dirs.append(os.path.expanduser("~/.local/share/flatpak/exports/share/applications"))
+    dirs.append("/var/lib/flatpak/exports/share/applications")
+    return [d for d in dirs if os.path.isdir(d)]
+
+
+def parse_entry(path):
+    """Read the [Desktop Entry] group only; enough for matching and display."""
+    fields = {}
+    in_group = False
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("["):
+                    in_group = line == "[Desktop Entry]"
+                    continue
+                if not in_group or "=" not in line or line.startswith("#"):
+                    continue
+                key, _, value = line.partition("=")
+                fields.setdefault(key.strip(), value.strip())
+    except OSError:
+        return None
+
+    if fields.get("Type", "Application") != "Application":
+        return None
+    if fields.get("NoDisplay", "false").lower() == "true":
+        return None
+    if fields.get("Hidden", "false").lower() == "true":
+        return None
+
+    entry_id = os.path.basename(path)[: -len(".desktop")]
+    exec_bin = ""
+    if fields.get("Exec"):
+        parts = re.sub(r"%[a-zA-Z]", "", fields["Exec"]).split()
+        if parts:
+            exec_bin = os.path.basename(parts[0])
+
+    return {
+        "id": entry_id,
+        "name": fields.get("Name", entry_id),
+        "wmclass": fields.get("StartupWMClass", ""),
+        "exec": exec_bin,
+        "path": path,
+    }
+
+
+def all_entries():
+    seen = {}
+    for directory in desktop_dirs():
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith(".desktop"):
+                continue
+            entry_id = name[: -len(".desktop")]
+            if entry_id in seen:
+                continue  # earlier dirs (user overrides) win
+            entry = parse_entry(os.path.join(directory, name))
+            if entry:
+                seen[entry_id] = entry
+    return list(seen.values())
+
+
+def resolve(query):
+    """Find one desktop entry for a user-typed name.
+
+    Returns (entry, candidates). If entry is None and candidates is non-empty,
+    the query was ambiguous.
+    """
+    q = query.strip().lower()
+    if q.endswith(".desktop"):
+        q = q[: -len(".desktop")]
+
+    entries = all_entries()
+
+    def field(e, key):
+        return (e.get(key) or "").lower()
+
+    # Most specific match first, so `duck add code` does not land on `code-url-handler`.
+    for test in (
+        lambda e: field(e, "id") == q,
+        lambda e: field(e, "name") == q,
+        lambda e: field(e, "exec") == q,
+        lambda e: field(e, "wmclass") == q,
+        lambda e: field(e, "id").split(".")[-1] == q,
+    ):
+        exact = [e for e in entries if test(e)]
+        if len(exact) == 1:
+            return exact[0], []
+        if len(exact) > 1:
+            return None, exact
+
+    partial = [e for e in entries if q in field(e, "id") or q in field(e, "name")]
+    if len(partial) == 1:
+        return partial[0], []
+    return None, partial
+
+
+def find_pinned(cfg, query):
+    """Match an argument against something already pinned, without guessing."""
+    q = query.strip().lower()
+    if q.endswith(".desktop"):
+        q = q[: -len(".desktop")]
+
+    for app in cfg["apps"]:
+        if app.lower() == q:
+            return app
+    for app in cfg["apps"]:
+        if app.lower().split(".")[-1] == q:
+            return app
+
+    entry, _ = resolve(query)
+    if entry and entry["id"] in cfg["apps"]:
+        return entry["id"]
+
+    for app in cfg["apps"]:
+        if q in app.lower():
+            return app
+    return None
+
+
+def display_name(app_id):
+    entry, _ = resolve(app_id)
+    return entry["name"] if entry else f"{app_id}  (not found)"
+
+
+# --- talking to the running dock --------------------------------------------
+
+# Every IPC call is bounded. `duck toggle` is on a keybinding, and a hung
+# call would wedge the keypress -- which happens if two instances of the same
+# config are somehow running and `qs ipc` cannot pick one.
+IPC_TIMEOUT = 5
+# Readiness polling uses a much shorter probe: a starting instance either
+# answers quickly or is not up yet, and a long probe would multiply out into
+# a start command that blocks for minutes.
+PROBE_TIMEOUT = 1
+STARTUP_WAIT = 12
+
+
+RUNTIME_DIR = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "quickshell", "by-id"
+)
+
+
+def instances():
+    """Live quickshell instances, as a list of (instance_id, pid, config_path)."""
+    try:
+        result = subprocess.run(
+            ["qs", "list", "--all"], capture_output=True, text=True, timeout=IPC_TIMEOUT
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+
+    found = []
+    instance_id = pid = config = None
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("Instance "):
+            if instance_id:
+                found.append((instance_id, pid, config))
+            instance_id, pid, config = line[len("Instance "):].rstrip(":"), None, None
+        elif line.startswith("Process ID:"):
+            try:
+                pid = int(line.split(":", 1)[1])
+            except ValueError:
+                pid = None
+        elif line.startswith("Config path:"):
+            config = line.split(":", 1)[1].strip()
+
+    if instance_id:
+        found.append((instance_id, pid, config))
+    return found
+
+
+def duck_pids():
+    marker = os.path.join("quickshell", CONFIG_NAME, "shell.qml")
+    return [pid for _, pid, config in instances() if pid and config and config.endswith(marker)]
+
+
+def prune_stale():
+    """Remove socket directories left behind by instances that died uncleanly.
+
+    `qs ipc` blocks indefinitely trying to reach a dead instance's socket, which
+    would wedge `duck toggle` on its keybinding. A crash or SIGKILL always leaves
+    one of these behind, so clear them before giving up on a call.
+    """
+    if not os.path.isdir(RUNTIME_DIR):
+        return False
+
+    live = {instance_id for instance_id, _, _ in instances()}
+    if not live:
+        # `qs list` itself failed; deleting everything here would be guesswork.
+        return False
+
+    removed = False
+    for name in os.listdir(RUNTIME_DIR):
+        if name in live:
+            continue
+        try:
+            shutil.rmtree(os.path.join(RUNTIME_DIR, name))
+            removed = True
+        except OSError:
+            pass
+    return removed
+
+
+def running(timeout=IPC_TIMEOUT):
+    try:
+        result = subprocess.run(
+            ["qs", "-c", CONFIG_NAME, "ipc", "call", "dock", "list"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return result.returncode == 0
+
+
+def ipc(function, *args, quiet=False):
+    if not shutil.which("qs"):
+        die("quickshell (qs) is not installed")
+
+    command = ["qs", "-c", CONFIG_NAME, "ipc", "call", "dock", function, *args]
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=IPC_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # Almost always a stale socket from a previous instance. Clear it and
+        # retry once before reporting failure.
+        if prune_stale():
+            try:
+                result = subprocess.run(
+                    command, capture_output=True, text=True, timeout=IPC_TIMEOUT
+                )
+            except subprocess.TimeoutExpired:
+                result = None
+        else:
+            result = None
+
+        if result is None:
+            if quiet:
+                return None
+            die("the dock is not responding — try `duck restart`")
+
+    if result.returncode != 0:
+        if quiet:
+            return None
+        die("the dock is not running — start it with `duck start`")
+
+    out = result.stdout.strip()
+    if out:
+        info(out)
+    return out
+
+
+# --- commands ---------------------------------------------------------------
+
+def cmd_add(args):
+    if not args:
+        die("usage: duck add <app> [app...]")
+
+    cfg = load()
+    changed = False
+
+    for query in args:
+        entry, candidates = resolve(query)
+        if not entry:
+            if candidates:
+                info(f"'{query}' is ambiguous. Did you mean:")
+                for c in sorted(candidates, key=lambda e: e["name"])[:10]:
+                    info(f"    {c['name']}  ({c['id']})")
+            else:
+                info(f"no application matching '{query}' — try `duck search {query}`")
+            continue
+
+        if entry["id"] in cfg["apps"]:
+            info(f"{entry['name']} is already pinned")
+            continue
+
+        cfg["apps"].append(entry["id"])
+        changed = True
+        info(f"pinned {entry['name']}  ({entry['id']})")
+
+    if changed:
+        save(cfg)
+
+
+def cmd_remove(args):
+    if not args:
+        die("usage: duck rm <app> [app...]")
+
+    cfg = load()
+    changed = False
+
+    for query in args:
+        app = find_pinned(cfg, query)
+        if not app:
+            info(f"'{query}' is not pinned")
+            continue
+        cfg["apps"].remove(app)
+        changed = True
+        info(f"unpinned {display_name(app)}")
+
+    if changed:
+        save(cfg)
+
+
+def cmd_list(args):
+    cfg = load()
+    if not cfg["apps"]:
+        info("nothing pinned yet — try `duck add ghostty`")
+        return
+    width = len(str(len(cfg["apps"])))
+    for index, app in enumerate(cfg["apps"], start=1):
+        info(f"{str(index).rjust(width)}. {display_name(app)}")
+
+
+def cmd_move(args):
+    if len(args) != 2:
+        die("usage: duck move <app> <position>   (1-based)")
+
+    cfg = load()
+    app = find_pinned(cfg, args[0])
+    if not app:
+        die(f"'{args[0]}' is not pinned")
+
+    try:
+        target = int(args[1]) - 1
+    except ValueError:
+        die(f"'{args[1]}' is not a position")
+
+    target = max(0, min(len(cfg["apps"]) - 1, target))
+    cfg["apps"].remove(app)
+    cfg["apps"].insert(target, app)
+    save(cfg)
+    info(f"moved {display_name(app)} to position {target + 1}")
+
+
+def cmd_search(args):
+    if not args:
+        die("usage: duck search <text>")
+
+    q = " ".join(args).lower()
+    matches = [
+        e for e in all_entries()
+        if q in e["name"].lower() or q in e["id"].lower() or q in (e["exec"] or "").lower()
+    ]
+    if not matches:
+        info(f"nothing matching '{q}'")
+        return
+    for entry in sorted(matches, key=lambda e: e["name"])[:40]:
+        info(f"{entry['name']:<34} {entry['id']}")
+
+
+def cmd_set(args):
+    if len(args) != 2:
+        keys = ", ".join(k for k in DEFAULTS if k != "apps")
+        die(f"usage: duck set <key> <value>\n  keys: {keys}")
+
+    key, raw = args
+    if key not in DEFAULTS or key == "apps":
+        die(f"unknown setting '{key}'")
+
+    default = DEFAULTS[key]
+    if isinstance(default, bool):
+        if raw.lower() in ("true", "on", "yes", "1"):
+            value = True
+        elif raw.lower() in ("false", "off", "no", "0"):
+            value = False
+        else:
+            die(f"'{raw}' is not a boolean")
+    elif isinstance(default, int):
+        try:
+            value = int(raw)
+        except ValueError:
+            die(f"'{raw}' is not a number")
+    else:
+        value = raw
+
+    cfg = load()
+    cfg[key] = value
+    save(cfg)
+    info(f"{key} = {json.dumps(value)}")
+
+
+def cmd_get(args):
+    cfg = load()
+    if args:
+        key = args[0]
+        if key not in cfg:
+            die(f"unknown setting '{key}'")
+        info(json.dumps(cfg[key]))
+        return
+    for key in DEFAULTS:
+        if key != "apps":
+            info(f"{key:<14} {json.dumps(cfg.get(key))}")
+
+
+def cmd_start(args, quiet=False):
+    prune_stale()
+    if duck_pids():
+        info("duck is already running")
+        return
+    subprocess.Popen(
+        ["qs", "-c", CONFIG_NAME, "-d", "-n"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+    # Scanning desktop entries and icons takes a moment; wait for the instance
+    # to answer IPC so that `duck start && duck toggle` works in one breath.
+    deadline = time.monotonic() + STARTUP_WAIT
+    ready = False
+    while time.monotonic() < deadline:
+        if running(PROBE_TIMEOUT):
+            ready = True
+            break
+        time.sleep(0.3)
+
+    if not quiet:
+        info("duck started" if ready else "duck started (not answering yet)")
+
+
+def stop_instances():
+    """Stop every running duck instance, and report whether any were found."""
+    pids = duck_pids()
+    if not pids:
+        prune_stale()
+        return False
+
+    # `qs kill` is the clean path, but it talks over the same IPC socket -- so it
+    # cannot stop an instance that has stopped answering. Signal those directly.
+    subprocess.run(["qs", "-c", CONFIG_NAME, "kill"], capture_output=True, timeout=IPC_TIMEOUT)
+
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and any(alive(pid) for pid in pids):
+        time.sleep(0.2)
+
+    for pid in pids:
+        if alive(pid):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and any(alive(pid) for pid in pids):
+        time.sleep(0.2)
+
+    for pid in pids:
+        if alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+    prune_stale()
+    return True
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def cmd_stop(args):
+    if stop_instances():
+        info("duck stopped")
+    else:
+        info("duck is not running")
+
+
+def cmd_restart(args):
+    stop_instances()
+    cmd_start([], quiet=True)
+    info("duck restarted")
+
+
+def cmd_status(args):
+    info("running" if running() else "not running")
+
+
+def cmd_help(args):
+    print(__doc__.strip().split("\n")[0])
+    print(f"""
+usage: duck <command> [arguments]
+
+  add <app>...          pin an app to the dock
+  rm <app>...           unpin an app
+  list                  show pinned apps in order
+  move <app> <pos>      move a pinned app to a 1-based position
+  search <text>         find installed apps by name
+
+  show | hide | toggle  control the dock window
+  settings              open the settings window
+
+  set <key> <value>     change a setting
+  get [key]             show settings
+
+  start | stop | restart | status
+
+Pinned apps and settings live in {CONFIG_PATH}.
+""".rstrip())
+
+
+COMMANDS = {
+    "add": cmd_add,
+    "rm": cmd_remove,
+    "remove": cmd_remove,
+    "list": cmd_list,
+    "ls": cmd_list,
+    "move": cmd_move,
+    "search": cmd_search,
+    "set": cmd_set,
+    "get": cmd_get,
+    "start": cmd_start,
+    "stop": cmd_stop,
+    "restart": cmd_restart,
+    "status": cmd_status,
+    "help": cmd_help,
+    "--help": cmd_help,
+    "-h": cmd_help,
+}
+
+# CLI verb -> IpcHandler function name. `show` is renamed because `qs ipc`
+# reserves that word for its own introspection subcommand.
+IPC_COMMANDS = {
+    "show": "reveal",
+    "reveal": "reveal",
+    "hide": "hide",
+    "toggle": "toggle",
+    "settings": "settings",
+}
+
+
+def main():
+    argv = sys.argv[1:]
+    if not argv:
+        cmd_help([])
+        return
+
+    command, args = argv[0], argv[1:]
+
+    if command in IPC_COMMANDS:
+        ipc(IPC_COMMANDS[command], *args)
+        return
+
+    handler = COMMANDS.get(command)
+    if not handler:
+        die(f"unknown command '{command}' — run `duck help`")
+    handler(args)
+
+
+if __name__ == "__main__":
+    main()
