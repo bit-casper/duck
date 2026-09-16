@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Widgets
+import qs.Commons
 
 // One app in the dock. Purely presentational — the dock owns selection, drag
 // state and click handling so that reordering never destroys a live delegate.
@@ -11,26 +12,33 @@ Item {
     id: root
 
     required property var item
+    // Only needed for the `animate` setting; the dock passes its own down.
+    required property var config
     property int iconSize: 24
     property bool selected: false
     property bool hovered: false
     property bool dragging: false
 
-    implicitWidth: iconSize + Theme.spacingXxl
-    implicitHeight: iconSize + Theme.spacingXxl
+    implicitWidth: iconSize + Style.spacing.xxl
+    implicitHeight: iconSize + Style.spacing.xxl
 
-    readonly property string state: selected ? "selected" : (hovered ? "hover-cursor" : "normal")
     readonly property bool active: selected || hovered
+
+    // Omarchy's control states: a selected icon reads as "selected", a hovered
+    // one as the shared hover/keyboard-cursor treatment.
+    readonly property color stateFill: root.selected ? Style.selectedFill : Style.hoverFill
+    readonly property color stateBorder: root.selected ? Style.selectedBorderColor : Style.hoverBorderColor
+    readonly property int stateBorderWidth: root.selected ? Style.selectedBorderWidth : Style.hoverBorderWidth
 
     Rectangle {
         anchors.fill: parent
-        radius: Theme.cornerRadius
-        color: root.active ? Theme.fill(root.state) : "transparent"
-        border.width: root.active ? Theme.borderWidthFor(root.state) : 0
-        border.color: Theme.border(root.state)
+        radius: Style.cornerRadius
+        color: root.active ? root.stateFill : "transparent"
+        border.width: root.active ? root.stateBorderWidth : 0
+        border.color: root.stateBorder
 
         Behavior on color {
-            enabled: Config.animate
+            enabled: root.config.animate
             ColorAnimation { duration: 110 }
         }
     }
@@ -41,18 +49,19 @@ Item {
         anchors.centerIn: parent
         implicitSize: root.iconSize
         asynchronous: true
-        // Already resolved to a usable URL by Icons.source() in Apps.buildItems.
-        source: root.item.icon ? root.item.icon : Icons.fallback
+        // Already resolved to a usable URL by DuckIcons.source() in buildItems,
+        // which substitutes the generic fallback when an app has no icon.
+        source: root.item.icon ? root.item.icon : ""
 
         opacity: root.dragging ? 0.25 : 1
         scale: root.active && !root.dragging ? 1.08 : 1
 
         Behavior on scale {
-            enabled: Config.animate
+            enabled: root.config.animate
             NumberAnimation { duration: 130; easing.type: Easing.OutBack }
         }
         Behavior on opacity {
-            enabled: Config.animate
+            enabled: root.config.animate
             NumberAnimation { duration: 110 }
         }
     }
@@ -65,14 +74,14 @@ Item {
         visible: root.item.missing === true
         color: "transparent"
         border.width: 1
-        border.color: Theme.muted
-        radius: Theme.cornerRadius
+        border.color: Color.muted
+        radius: Style.cornerRadius
 
         Text {
             anchors.centerIn: parent
             text: "?"
-            color: Theme.muted
-            font.family: Theme.fontFamily
+            color: Color.muted
+            font.family: Style.font.family
             font.pixelSize: parent.height * 0.7
         }
     }
@@ -82,7 +91,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 1
-        spacing: Theme.spacingXs
+        spacing: Style.spacing.xs
         visible: root.item.running && !root.dragging
 
         Repeater {
@@ -91,8 +100,8 @@ Item {
             Rectangle {
                 width: 3
                 height: 3
-                radius: Theme.cornerRadius > 0 ? 1.5 : 0
-                color: Theme.accent
+                radius: Style.cornerRadius > 0 ? 1.5 : 0
+                color: Color.accent
             }
         }
     }

@@ -1,5 +1,3 @@
-pragma Singleton
-
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
@@ -8,17 +6,21 @@ import Quickshell.Wayland
 //
 // Passing every dependency as an explicit argument to buildItems() is what makes
 // `items` re-evaluate when apps are pinned, a window opens, or the setting flips.
-Singleton {
+Item {
     id: root
+
+    // Injected by Duck.qml rather than reached as singletons.
+    required property var config
+    required property var icons
 
     // DesktopEntries fills in asynchronously after startup, one entry at a time.
     // It is passed through as an explicit dependency so `items` re-resolves as
     // entries arrive — without it the dock renders placeholder icons forever.
     readonly property var entries: DesktopEntries.applications.values
 
-    readonly property var items: buildItems(Config.apps, Config.showRunning,
+    readonly property var items: buildItems(root.config.apps, root.config.showRunning,
                                             ToplevelManager.toplevels.values, entries,
-                                            Icons.index)
+                                            root.icons.index)
 
     // Desktop ids, window app-ids and WM_CLASS values disagree about case and
     // reverse-DNS prefixes, so compare on a flattened form.
@@ -131,7 +133,7 @@ Singleton {
                 "id": id,
                 "entry": entry,
                 "name": entry ? entry.name : id,
-                "icon": Icons.source(entry ? entry.icon : ""),
+                "icon": root.icons.source(entry ? entry.icon : ""),
                 "pinned": true,
                 "windows": mine,
                 "running": mine.length > 0,
@@ -168,7 +170,7 @@ Singleton {
                 "id": entry ? entry.id : group[0].appId,
                 "entry": entry,
                 "name": entry ? entry.name : (group[0].title || group[0].appId),
-                "icon": Icons.source(entry ? entry.icon : ""),
+                "icon": root.icons.source(entry ? entry.icon : ""),
                 "pinned": false,
                 "windows": group,
                 "running": true,
@@ -182,7 +184,7 @@ Singleton {
     // --- mutations, all routed through Config so the JSON file stays canonical ---
 
     function pin(id) {
-        return pinAt(id, Config.apps.length);
+        return pinAt(id, root.config.apps.length);
     }
 
     // Pin at a specific position. Dragging a running-but-unpinned icon lands
@@ -190,39 +192,39 @@ Singleton {
     function pinAt(id, index) {
         const entry = entryFor(id);
         const resolved = entry ? entry.id : id;
-        const list = Config.apps.slice();
+        const list = root.config.apps.slice();
 
         if (list.indexOf(resolved) !== -1) return false;
 
         const target = Math.max(0, Math.min(list.length, index));
         list.splice(target, 0, resolved);
-        Config.setApps(list);
+        root.config.setApps(list);
         return true;
     }
 
     function unpin(id) {
         const entry = entryFor(id);
         const resolved = entry ? entry.id : id;
-        const list = Config.apps.slice();
+        const list = root.config.apps.slice();
 
         let index = list.indexOf(resolved);
         if (index === -1) index = list.indexOf(id);
         if (index === -1) return false;
 
         list.splice(index, 1);
-        Config.setApps(list);
+        root.config.setApps(list);
         return true;
     }
 
     function move(from, to) {
-        const list = Config.apps.slice();
+        const list = root.config.apps.slice();
         if (from < 0 || from >= list.length) return false;
 
         const clamped = Math.max(0, Math.min(list.length - 1, to));
         if (clamped === from) return false;
 
         list.splice(clamped, 0, list.splice(from, 1)[0]);
-        Config.setApps(list);
+        root.config.setApps(list);
         return true;
     }
 

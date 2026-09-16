@@ -1,5 +1,3 @@
-pragma Singleton
-
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -10,7 +8,7 @@ import Quickshell.Io
 // theme (Ghostty is one), returning an empty path and leaving the dock full of
 // generic placeholders. So we keep our own index of every app icon on disk and
 // fall back to it whenever the themed lookup comes up empty.
-Singleton {
+Item {
     id: root
 
     readonly property string fallback: Quickshell.iconPath("application-x-executable")

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "duck",
+  "name": "Duck",
+  "version": "1.0.0",
+  "author": "bit-casper",
+  "description": "A dock that hides at the bottom of the screen and slides up on hover or a keybinding.",
+  "kinds": ["panel"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Duck.qml"
+  }
+}

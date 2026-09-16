@@ -8,7 +8,6 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
 BIN_DIR="$HOME/.local/bin"
 HYPR_DIR="$HOME/.config/hypr"
 MENU_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
@@ -37,12 +36,12 @@ unlink_ours() {
 
 echo "Uninstalling Duck"
 
+# The dock itself is removed with `omarchy plugin remove duck`; this undoes
+# the configuration that plugin could not install on its own.
 if command -v duck >/dev/null 2>&1; then
-  duck stop >/dev/null 2>&1 || true
-  say "stopped  the dock"
+  duck hide >/dev/null 2>&1 || true
 fi
 
-unlink_ours "$QS_DIR/duck" "$REPO/shell"
 unlink_ours "$BIN_DIR/duck" "$REPO/bin/duck"
 
 if hypr_has_block "$HYPR_DIR/hyprland.lua"; then
@@ -104,4 +103,5 @@ while IFS= read -r backup; do
 done < <(find "$HYPR_DIR" "$(dirname "$MENU_FILE")" -maxdepth 1 -name '*.duck-backup' 2>/dev/null | sort || true)
 
 echo
-echo "Done. Duck is uninstalled."
+echo "Done. To remove the dock itself:"
+echo "  omarchy plugin remove duck"

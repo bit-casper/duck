@@ -1,28 +1,33 @@
 # Duck
 
-A dynamic dock for [Omarchy](https://omarchy.org/). Hidden by default, slides up
-from the bottom edge, themed from whatever Omarchy theme is active.
+A dock for [Omarchy](https://omarchy.org/). Hidden by default, slides up from the
+bottom edge, themed from whatever Omarchy theme is active.
 
-Built on [Quickshell](https://quickshell.org/) — the same engine as Omarchy's own
-bar — so it uses real `wlr-layer-shell` surfaces rather than a floating window.
+Duck is an Omarchy **shell plugin**: it loads into the same Quickshell process as
+the bar and draws real `wlr-layer-shell` surfaces, so it uses Omarchy's own
+colours, type scale, spacing and UI components rather than imitating them.
 
 ## Install
 
 ```bash
-./install.sh
+omarchy plugin add https://github.com/bit-casper/duck.git --enable
+~/.config/omarchy/plugins/duck/setup.sh
 duck add ghostty chromium
-duck start
 ```
 
-Duck also adds itself to the Omarchy menu, so `SUPER+SPACE` → "duck" finds it.
+The first command installs the dock. The second sets up the parts a plugin
+cannot ship itself — the Hyprland bindings, the Omarchy menu entry, and the
+`duck` CLI.
 
 ### What it touches
 
+`omarchy plugin add` owns `~/.config/omarchy/plugins/duck/`, and
+`omarchy plugin remove duck` takes it away again. `setup.sh` adds:
+
 | Path | What |
 |---|---|
-| `~/.config/quickshell/duck` | symlink to `shell/` |
-| `~/.local/bin/duck` | symlink to `bin/duck` |
-| `~/.config/hypr/duck.lua` | Duck's Hyprland config — keys, window rule, autostart |
+| `~/.local/bin/duck` | symlink to the plugin's `bin/duck` |
+| `~/.config/hypr/duck.lua` | Duck's Hyprland config — bindings and a window rule |
 | `~/.config/hypr/hyprland.lua` | one `require` line, between markers |
 | `~/.config/omarchy/extensions/omarchy-menu.jsonc` | Duck's menu rows, between markers |
 | `~/.config/duck/config.json` | settings |
@@ -31,7 +36,7 @@ Hyprland has no drop-in directory for user config and the Omarchy menu reads one
 fixed path, so those two shared files have to be edited. Duck writes only between
 `>>> duck: begin` / `<<< duck: end` markers and keeps one `.duck-backup` per file.
 
-`./uninstall.sh` removes all of it. It deletes only the text between its own
+`./uninstall.sh` reverses `setup.sh`. It deletes only the text between its own
 markers rather than restoring the backup, so anything you or Omarchy changed in
 those files meanwhile is preserved. `--purge` also removes your settings.
 
@@ -77,7 +82,7 @@ duck settings             # open the settings window
 duck set bordered false   # change a setting
 duck get                  # show all settings
 
-duck start | stop | restart | status
+duck enable | disable | restart | status
 ```
 
 ## Settings
@@ -98,36 +103,37 @@ the running dock watches the file and applies changes live.
 
 ## Theming
 
-Everything visual comes from Omarchy, live:
+Duck uses Omarchy's own `qs.Commons` — `Style`, `Color` and `Border` — so it is
+themed by the same values as the bar and menus, not by a copy of them. Fonts,
+the type scale, control fills, borders and corner radius all come straight from
+there, and `omarchy theme set <name>` or `omarchy font set <name>` restyles the
+dock along with everything else.
 
-- `colors.toml` — the palette
-- `shell.toml` — the same control fills, borders, type scale and spacing Omarchy
-  styles its own bar and menus with
-- Hyprland's `border_size`, `rounding` and `gaps_out` — so a bordered dock sits
-  exactly where a window would, with the same border
-- fontconfig — the system monospace family
-
-Run `omarchy theme set <name>` or `omarchy font set <name>` and the dock follows
-without a restart.
+The one exception is `DuckHypr.qml`, which reads Hyprland's `general:border_size`
+and `general:gaps_out` directly, because `Style` exposes neither at full
+precision — and a bordered dock has to sit exactly where a window would.
 
 ## Layout
 
 ```
-shell/            Quickshell config (QML)
-  shell.qml         Root: one dock per screen, plus the IPC surface
-  Dock.qml          The layer-shell panel: reveal, keyboard, drag-reorder
-  DockItem.qml      A single icon
-  Config.qml        config.json, watched and hot-reloaded
-  Theme.qml         Omarchy theme colors
-  Icons.qml         Icon resolution, with a filesystem fallback index
-  Apps.qml          Pinned + running apps, merged into the dock model
-  Settings*.qml     Settings window and its controls
+manifest.json     Omarchy plugin manifest (kind: panel)
+Duck.qml          Plugin entry point: owns state, docks, shortcuts and IPC
+Dock.qml          The layer-shell panel: reveal, drag-reorder, pointer handling
+DockItem.qml      A single icon
+DuckConfig.qml    config.json, watched and hot-reloaded
+DuckApps.qml      Pinned + running apps, merged into the dock model
+DuckIcons.qml     Icon resolution, with a filesystem fallback index
+DuckHypr.qml      The two Hyprland values Omarchy's Style does not expose
+Settings.qml      Settings window, built from Omarchy's Ui components
 bin/duck          CLI
-hypr/duck.lua     Hyprland config Duck installs (keys, window rule, autostart)
-lib/              Marker-block helpers shared by install and uninstall
-install.sh        Symlinks and config blocks
-uninstall.sh      Removes all of it
+hypr/duck.lua     Hyprland bindings and window rule
+lib/              Marker-block helpers shared by setup and uninstall
+setup.sh          Keys, menu entry and CLI (what a plugin cannot ship)
+uninstall.sh      Reverses setup.sh
 ```
+
+Nothing here is a QML singleton: Omarchy's plugins do not use them, and state is
+handed down from `Duck.qml` explicitly.
 
 ## Notes
 

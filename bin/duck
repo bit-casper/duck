@@ -3,8 +3,8 @@
 
 Pinned apps and settings live in ~/.config/duck/config.json, which the running
 dock watches. Commands that change configuration write that file directly, so
-they work identically whether or not the dock is running. Only the commands that
-act on a live window (show/hide/toggle/settings) need IPC.
+they work whether or not the dock is loaded. Commands that act on a live window
+(show/hide/toggle/settings) go through `omarchy-shell duck <method>`.
 """
 
 import json
@@ -16,7 +16,6 @@ import subprocess
 import time
 import sys
 
-CONFIG_NAME = "duck"
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "duck")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 
@@ -206,91 +205,25 @@ def display_name(app_id):
     return entry["name"] if entry else f"{app_id}  (not found)"
 
 
-# --- talking to the running dock --------------------------------------------
+# --- talking to the plugin ---------------------------------------------------
+#
+# Duck runs inside the Omarchy shell process, so everything goes through
+# `omarchy-shell duck <method>` rather than a Quickshell instance of our own.
 
-# Every IPC call is bounded. `duck toggle` is on a keybinding, and a hung
-# call would wedge the keypress -- which happens if two instances of the same
-# config are somehow running and `qs ipc` cannot pick one.
 IPC_TIMEOUT = 5
-# Readiness polling uses a much shorter probe: a starting instance either
-# answers quickly or is not up yet, and a long probe would multiply out into
-# a start command that blocks for minutes.
-PROBE_TIMEOUT = 1
-STARTUP_WAIT = 12
 
 
-RUNTIME_DIR = os.path.join(
-    os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "quickshell", "by-id"
-)
-
-
-def instances():
-    """Live quickshell instances, as a list of (instance_id, pid, config_path)."""
-    try:
-        result = subprocess.run(
-            ["qs", "list", "--all"], capture_output=True, text=True, timeout=IPC_TIMEOUT
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return []
-
-    found = []
-    instance_id = pid = config = None
-
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if line.startswith("Instance "):
-            if instance_id:
-                found.append((instance_id, pid, config))
-            instance_id, pid, config = line[len("Instance "):].rstrip(":"), None, None
-        elif line.startswith("Process ID:"):
-            try:
-                pid = int(line.split(":", 1)[1])
-            except ValueError:
-                pid = None
-        elif line.startswith("Config path:"):
-            config = line.split(":", 1)[1].strip()
-
-    if instance_id:
-        found.append((instance_id, pid, config))
-    return found
-
-
-def duck_pids():
-    marker = os.path.join("quickshell", CONFIG_NAME, "shell.qml")
-    return [pid for _, pid, config in instances() if pid and config and config.endswith(marker)]
-
-
-def prune_stale():
-    """Remove socket directories left behind by instances that died uncleanly.
-
-    `qs ipc` blocks indefinitely trying to reach a dead instance's socket, which
-    would wedge `duck toggle` on its keybinding. A crash or SIGKILL always leaves
-    one of these behind, so clear them before giving up on a call.
-    """
-    if not os.path.isdir(RUNTIME_DIR):
-        return False
-
-    live = {instance_id for instance_id, _, _ in instances()}
-    if not live:
-        # `qs list` itself failed; deleting everything here would be guesswork.
-        return False
-
-    removed = False
-    for name in os.listdir(RUNTIME_DIR):
-        if name in live:
-            continue
-        try:
-            shutil.rmtree(os.path.join(RUNTIME_DIR, name))
-            removed = True
-        except OSError:
-            pass
-    return removed
+def shell_available():
+    return shutil.which("omarchy-shell") is not None
 
 
 def running(timeout=IPC_TIMEOUT):
+    """True when the shell is up and Duck is loaded and answering."""
+    if not shell_available():
+        return False
     try:
         result = subprocess.run(
-            ["qs", "-c", CONFIG_NAME, "ipc", "call", "dock", "list"],
+            ["omarchy-shell", "duck", "list"],
             capture_output=True, text=True, timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -299,40 +232,29 @@ def running(timeout=IPC_TIMEOUT):
 
 
 def ipc(function, *args, quiet=False):
-    if not shutil.which("qs"):
-        die("quickshell (qs) is not installed")
-
-    command = ["qs", "-c", CONFIG_NAME, "ipc", "call", "dock", function, *args]
+    if not shell_available():
+        die("omarchy-shell not found — is Omarchy installed?")
 
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=IPC_TIMEOUT)
+        result = subprocess.run(
+            ["omarchy-shell", "duck", function, *args],
+            capture_output=True, text=True, timeout=IPC_TIMEOUT,
+        )
     except subprocess.TimeoutExpired:
-        # Almost always a stale socket from a previous instance. Clear it and
-        # retry once before reporting failure.
-        if prune_stale():
-            try:
-                result = subprocess.run(
-                    command, capture_output=True, text=True, timeout=IPC_TIMEOUT
-                )
-            except subprocess.TimeoutExpired:
-                result = None
-        else:
-            result = None
-
-        if result is None:
-            if quiet:
-                return None
-            die("the dock is not responding — try `duck restart`")
+        if quiet:
+            return None
+        die("the Omarchy shell is not responding — try `omarchy restart shell`")
 
     if result.returncode != 0:
         if quiet:
             return None
-        die("the dock is not running — start it with `duck start`")
+        die("Duck is not loaded — enable it with `duck enable`")
 
     out = result.stdout.strip()
     if out:
         info(out)
     return out
+
 
 
 # --- commands ---------------------------------------------------------------
@@ -478,90 +400,26 @@ def cmd_get(args):
             info(f"{key:<14} {json.dumps(cfg.get(key))}")
 
 
-def cmd_start(args, quiet=False):
-    prune_stale()
-    if duck_pids():
-        info("duck is already running")
-        return
-    subprocess.Popen(
-        ["qs", "-c", CONFIG_NAME, "-d", "-n"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-
-    # Scanning desktop entries and icons takes a moment; wait for the instance
-    # to answer IPC so that `duck start && duck toggle` works in one breath.
-    deadline = time.monotonic() + STARTUP_WAIT
-    ready = False
-    while time.monotonic() < deadline:
-        if running(PROBE_TIMEOUT):
-            ready = True
-            break
-        time.sleep(0.3)
-
-    if not quiet:
-        info("duck started" if ready else "duck started (not answering yet)")
+def cmd_enable(args):
+    subprocess.run(["omarchy", "plugin", "enable", "duck"], check=False)
 
 
-def stop_instances():
-    """Stop every running duck instance, and report whether any were found."""
-    pids = duck_pids()
-    if not pids:
-        prune_stale()
-        return False
-
-    # `qs kill` is the clean path, but it talks over the same IPC socket -- so it
-    # cannot stop an instance that has stopped answering. Signal those directly.
-    subprocess.run(["qs", "-c", CONFIG_NAME, "kill"], capture_output=True, timeout=IPC_TIMEOUT)
-
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and any(alive(pid) for pid in pids):
-        time.sleep(0.2)
-
-    for pid in pids:
-        if alive(pid):
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except OSError:
-                pass
-
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and any(alive(pid) for pid in pids):
-        time.sleep(0.2)
-
-    for pid in pids:
-        if alive(pid):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-
-    prune_stale()
-    return True
-
-
-def alive(pid):
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
-
-
-def cmd_stop(args):
-    if stop_instances():
-        info("duck stopped")
-    else:
-        info("duck is not running")
+def cmd_disable(args):
+    subprocess.run(["omarchy", "plugin", "disable", "duck"], check=False)
 
 
 def cmd_restart(args):
-    stop_instances()
-    cmd_start([], quiet=True)
-    info("duck restarted")
+    # Duck lives in the shell process, so reloading it means reloading the shell.
+    subprocess.run(["omarchy", "restart", "shell"], check=False)
+    info("restarting the Omarchy shell")
 
 
 def cmd_status(args):
-    info("running" if running() else "not running")
+    if not shell_available():
+        info("omarchy-shell not found")
+        return
+    info("loaded" if running() else "not loaded (try `duck enable`)")
+
 
 
 def cmd_help(args):
@@ -581,7 +439,8 @@ usage: duck <command> [arguments]
   set <key> <value>     change a setting
   get [key]             show settings
 
-  start | stop | restart | status
+  enable | disable      load or unload the Duck plugin
+  restart | status      restart the Omarchy shell; show plugin state
 
 Pinned apps and settings live in {CONFIG_PATH}.
 """.rstrip())
@@ -597,8 +456,8 @@ COMMANDS = {
     "search": cmd_search,
     "set": cmd_set,
     "get": cmd_get,
-    "start": cmd_start,
-    "stop": cmd_stop,
+    "enable": cmd_enable,
+    "disable": cmd_disable,
     "restart": cmd_restart,
     "status": cmd_status,
     "help": cmd_help,
@@ -618,18 +477,6 @@ IPC_COMMANDS = {
 }
 
 
-def leave_submap():
-    """Return Hyprland to its normal keybindings.
-
-    The dock does this itself when it closes, but Escape is bound to this
-    command precisely so there is a way out that does not depend on the dock
-    still being alive.
-    """
-    subprocess.run(
-        ["hyprctl", "dispatch", 'hl.dsp.submap("reset")'],
-        capture_output=True, timeout=IPC_TIMEOUT,
-    )
-
 
 def main():
     argv = sys.argv[1:]
@@ -640,12 +487,7 @@ def main():
     command, args = argv[0], argv[1:]
 
     if command in IPC_COMMANDS:
-        # Quiet for hide: the keyboard has to be handed back even when the dock
-        # is already gone, so a failed call here is not worth an error.
-        quiet = command == "hide"
-        ipc(IPC_COMMANDS[command], *args, quiet=quiet)
-        if command == "hide":
-            leave_submap()
+        ipc(IPC_COMMANDS[command], *args, quiet=(command == "hide"))
         return
 
     handler = COMMANDS.get(command)

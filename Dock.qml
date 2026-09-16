@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import qs.Commons
 
 // The dock surface: a layer-shell panel along the bottom edge.
 //
@@ -16,6 +17,12 @@ PanelWindow {
     id: win
 
     required property var modelData
+    // The plugin root: carries config, the app model, icons and the Hyprland
+    // values Style does not expose.
+    required property var duck
+
+    readonly property var config: duck.config
+    readonly property var apps: duck.apps
 
     screen: modelData
     color: "transparent"
@@ -28,21 +35,21 @@ PanelWindow {
 
     // --- geometry -----------------------------------------------------------
 
-    readonly property int borderWidth: Config.bordered ? Theme.borderWidth : 0
+    readonly property int borderWidth: win.config.bordered ? duck.hypr.borderWidth : 0
 
     // Icon size follows Omarchy's type scale rather than a setting. These are
     // logical pixels, so the compositor already scales them by the display
     // scale — the dock grows and shrinks with the user's scaling on its own.
-    readonly property int iconSize: Math.max(16, Math.round(24 * (Theme.fontBase / 12) * Theme.spacingScale))
-    readonly property int padding: Theme.spacingLg
+    readonly property int iconSize: Math.max(16, Math.round(24 * (Style.font.baseSize / 12) * Style.spacing.scale))
+    readonly property int padding: Style.spacing.lg
 
-    readonly property int slotSize: iconSize + Theme.spacingXxl
+    readonly property int slotSize: iconSize + Style.spacing.xxl
     readonly property int dockHeight: slotSize + padding * 2 + borderWidth * 2
 
     // Matches the gap every ordinary window keeps from the screen edge.
-    readonly property int gap: Theme.windowGap
+    readonly property int gap: duck.hypr.windowGap
     // Reserved above the dock so tooltips render inside the panel surface.
-    readonly property int tipHeight: Theme.spacingHuge + Theme.fontBody + Theme.spacingLg
+    readonly property int tipHeight: Style.spacing.huge + Style.font.body + Style.spacing.lg
 
     implicitHeight: tipHeight + dockHeight + gap
 
@@ -54,7 +61,7 @@ PanelWindow {
 
     property int selectedIndex: -1
 
-    readonly property var items: Apps.items
+    readonly property var items: win.apps.items
 
     function submap(name) {
         Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.submap(\"" + name + "\")"]);
@@ -120,25 +127,25 @@ PanelWindow {
             if (!item) return;
 
             if (item.pinned) {
-                const from = Config.apps.indexOf(item.id);
-                if (Apps.move(from, from + step)) win.selectedIndex += step;
+                const from = win.config.apps.indexOf(item.id);
+                if (win.apps.move(from, from + step)) win.selectedIndex += step;
             } else {
                 // A running-only app has no stored position; moving it pins it.
-                const target = Math.max(0, Math.min(Config.apps.length, win.selectedIndex + step));
-                if (Apps.pinAt(item.id, target)) win.selectedIndex = target;
+                const target = Math.max(0, Math.min(win.config.apps.length, win.selectedIndex + step));
+                if (win.apps.pinAt(item.id, target)) win.selectedIndex = target;
             }
             return;
         }
 
         if (action === "activate") {
-            if (item) Apps.activate(item);
+            if (item) win.apps.activate(item);
             win.hide();
             return;
         }
 
         if (action === "unpin") {
             if (item && item.pinned) {
-                Apps.unpin(item.id);
+                win.apps.unpin(item.id);
                 win.selectedIndex = Math.max(0, Math.min(win.selectedIndex, win.items.length - 2));
             }
         }
@@ -152,7 +159,7 @@ PanelWindow {
     // Push mode only reserves space while the dock is on screen; otherwise an
     // auto-hiding dock would permanently shrink the workspace.
     exclusionMode: ExclusionMode.Normal
-    exclusiveZone: (Config.pushWindows && open) ? (dockHeight + gap) : 0
+    exclusiveZone: (win.config.pushWindows && open) ? (dockHeight + gap) : 0
 
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "duck-dock"
@@ -169,19 +176,19 @@ PanelWindow {
         width: win.width
         // Zero height while closed with edge-reveal off: fully click-through
         // until a keybinding raises it.
-        height: win.open ? win.implicitHeight : (Config.edgeReveal ? 1 : 0)
+        height: win.open ? win.implicitHeight : (win.config.edgeReveal ? 1 : 0)
     }
 
     Timer {
         id: hideTimer
-        interval: Config.hideDelay
+        interval: win.config.hideDelay
         onTriggered: if (!win.keyOpen) win.mouseOpen = false
     }
 
     Timer {
         id: revealTimer
-        interval: Config.revealDelay
-        onTriggered: if (hoverArea.containsMouse && Config.edgeReveal) win.mouseOpen = true
+        interval: win.config.revealDelay
+        onTriggered: if (hoverArea.containsMouse && win.config.edgeReveal) win.mouseOpen = true
     }
 
     // --- content ------------------------------------------------------------
@@ -201,7 +208,7 @@ PanelWindow {
             y: win.open ? 0 : win.implicitHeight
 
             Behavior on y {
-                enabled: Config.animate
+                enabled: win.config.animate
                 NumberAnimation {
                     duration: 200
                     easing.type: Easing.OutCubic
@@ -233,21 +240,21 @@ PanelWindow {
                            row.x + (tip.item ? win.indexOf(tip.item) * win.slotSize : 0)
                              + win.slotSize / 2 - width / 2))
 
-                    implicitWidth: tipLabel.implicitWidth + Theme.rowPaddingX * 2
-                    implicitHeight: tipLabel.implicitHeight + Theme.spacingMd * 2
-                    radius: Theme.cornerRadius
+                    implicitWidth: tipLabel.implicitWidth + Style.spacing.rowPaddingX * 2
+                    implicitHeight: tipLabel.implicitHeight + Style.spacing.md * 2
+                    radius: Style.cornerRadius
 
-                    color: Theme.tooltipBackground
-                    border.width: Theme.borderWidth
-                    border.color: Theme.tooltipBorder
+                    color: Color.tooltip.background
+                    border.width: duck.hypr.borderWidth
+                    border.color: Color.tooltip.border
 
                     Text {
                         id: tipLabel
                         anchors.centerIn: parent
                         text: tip.item ? tip.item.name : ""
-                        color: Theme.tooltipText
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontBody
+                        color: Color.tooltip.text
+                        font.family: Style.font.family
+                        font.pixelSize: Style.font.body
                     }
                 }
             }
@@ -268,23 +275,23 @@ PanelWindow {
                 // radius Hyprland draws on windows.
                 Rectangle {
                     anchors.fill: parent
-                    visible: Config.bordered
-                    color: Theme.background
+                    visible: win.config.bordered
+                    color: Color.background
                     border.width: win.borderWidth
-                    border.color: Theme.accent
-                    radius: Theme.cornerRadius
+                    border.color: Color.accent
+                    radius: Style.cornerRadius
                 }
 
                 // Borderless: no chrome, just a fade up from the screen edge.
                 Rectangle {
                     anchors.fill: parent
-                    visible: !Config.bordered
-                    radius: Theme.cornerRadius
+                    visible: !win.config.bordered
+                    radius: Style.cornerRadius
 
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.0) }
-                        GradientStop { position: 0.55; color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.65) }
-                        GradientStop { position: 1.0; color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.95) }
+                        GradientStop { position: 0.0; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.0) }
+                        GradientStop { position: 0.55; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.65) }
+                        GradientStop { position: 1.0; color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.95) }
                     }
                 }
 
@@ -302,6 +309,7 @@ PanelWindow {
                             required property var modelData
 
                             item: modelData
+                            config: win.config
                             iconSize: win.iconSize
                             width: win.slotSize
                             height: win.slotSize
@@ -315,9 +323,9 @@ PanelWindow {
                 // Insertion caret shown while dragging.
                 Rectangle {
                     visible: drag.active && drag.toIndex >= 0
-                    width: Math.max(2, Theme.borderWidth)
+                    width: Math.max(2, duck.hypr.borderWidth)
                     height: win.slotSize
-                    color: Theme.accent
+                    color: Color.accent
                     y: (body.height - height) / 2
                     x: row.x + drag.toIndex * win.slotSize - width / 2
                 }
@@ -326,6 +334,7 @@ PanelWindow {
                 DockItem {
                     visible: drag.active && drag.item !== null
                     item: drag.item !== null ? drag.item : { "icon": "", "name": "", "running": false, "windows": [] }
+                    config: win.config
                     iconSize: win.iconSize
                     width: win.slotSize
                     height: win.slotSize
@@ -389,12 +398,12 @@ PanelWindow {
         function dropAt(x) {
             const localX = x - row.x - body.x;
             const slot = Math.round(localX / win.slotSize);
-            return Math.max(0, Math.min(Config.apps.length, slot));
+            return Math.max(0, Math.min(win.config.apps.length, slot));
         }
 
         onEntered: {
             hideTimer.stop();
-            if (!win.open && Config.edgeReveal) revealTimer.restart();
+            if (!win.open && win.config.edgeReveal) revealTimer.restart();
         }
 
         onExited: {
@@ -429,12 +438,12 @@ PanelWindow {
                 const item = drag.item;
 
                 if (item.pinned) {
-                    const from = Config.apps.indexOf(item.id);
+                    const from = win.config.apps.indexOf(item.id);
                     // Dropping right of its own slot shifts the target left one.
                     const to = drag.toIndex > from ? drag.toIndex - 1 : drag.toIndex;
-                    Apps.move(from, to);
+                    win.apps.move(from, to);
                 } else {
-                    Apps.pinAt(item.id, drag.toIndex);
+                    win.apps.pinAt(item.id, drag.toIndex);
                 }
 
                 drag.reset();
@@ -453,13 +462,13 @@ PanelWindow {
             pressIndex = -1;
 
             if (mouse.button === Qt.LeftButton) {
-                Apps.activate(item);
+                win.apps.activate(item);
                 if (win.keyOpen) win.hide();
             } else if (mouse.button === Qt.MiddleButton) {
-                Apps.launch(item);
+                win.apps.launch(item);
             } else if (mouse.button === Qt.RightButton) {
-                if (item.pinned) Apps.unpin(item.id);
-                else Apps.pin(item.id);
+                if (item.pinned) win.apps.unpin(item.id);
+                else win.apps.pin(item.id);
             }
         }
     }

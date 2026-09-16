@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
-# Installs Duck for the current user.
+# Sets up the parts of Duck that an Omarchy plugin cannot ship itself.
+#
+# The dock is installed by `omarchy plugin add`; what is left over is the
+# Hyprland side (bindings and a window rule), the menu entry, and the CLI.
 #
 # Footprint, in full:
-#   ~/.config/quickshell/duck   symlink to this repo's shell/
-#   ~/.local/bin/duck           symlink to this repo's bin/duck
-#   ~/.config/hypr/duck.lua     Duck's Hyprland config (keybinding, rules, autostart)
+#   ~/.local/bin/duck           symlink to this plugin's bin/duck
+#   ~/.config/hypr/duck.lua     Duck's Hyprland config (bindings, window rule)
 #   ~/.config/hypr/hyprland.lua one `require` line between BEGIN/END markers
 #   omarchy-menu.jsonc          Duck's menu rows, between BEGIN/END markers
 #   ~/.config/duck/config.json  settings
@@ -15,7 +17,6 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
 BIN_DIR="$HOME/.local/bin"
 HYPR_DIR="$HOME/.config/hypr"
 MENU_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
@@ -44,10 +45,9 @@ link() {
   say "linked   $dest"
 }
 
-echo "Installing Duck from $REPO"
-mkdir -p "$QS_DIR" "$BIN_DIR" "$HYPR_DIR" "$CONF_DIR"
+echo "Setting up Duck from $REPO"
+mkdir -p "$BIN_DIR" "$HYPR_DIR" "$CONF_DIR"
 
-link "$REPO/shell" "$QS_DIR/duck"
 link "$REPO/bin/duck" "$BIN_DIR/duck"
 
 # Earlier versions appended separate blocks to three different files. Fold them
@@ -116,7 +116,9 @@ if command -v hyprctl >/dev/null 2>&1; then
 fi
 
 echo
-echo "Installed. Next:"
+echo "Ready. Next:"
 echo "  duck add ghostty      # pin an app"
-echo "  duck start            # run the dock"
-echo "  SUPER+CTRL+DOWN       # raise it"
+echo "  SUPER+CTRL+DOWN       # raise the dock"
+echo
+echo "If the dock is not showing, enable the plugin:"
+echo "  omarchy plugin enable duck"

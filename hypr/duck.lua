@@ -45,5 +45,4 @@ o.window({ class = "^org\\.quickshell$", title = "^Duck Settings$" }, {
   size = { 520, 720 },
 })
 
--- Start the dock with the session.
-o.launch_on_start("qs -c duck")
+-- No autostart line: Duck is an Omarchy shell plugin and loads with the shell.

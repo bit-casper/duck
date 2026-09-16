@@ -1,10 +1,12 @@
-pragma Singleton
-
 import QtQuick
 import Quickshell
 import Quickshell.Io
 
 // Duck's settings, backed by ~/.config/duck/config.json.
+//
+// An ordinary object rather than a QML singleton: Omarchy's plugins do not use
+// singletons, and the shell loads this from the plugin directory where a
+// singleton would need its own qmldir to be registered at all.
 //
 // The file is the source of truth: the `duck` CLI writes it directly and the
 // settings window writes it through set(). A watcher picks up either.
@@ -14,7 +16,7 @@ import Quickshell.Io
 // deliver pre-write content *after* the write lands — which reverts the value
 // and is what made toggles snap back when flipped quickly. So writes are
 // coalesced, and reloads are ignored while one is settling.
-Singleton {
+Item {
     id: root
 
     readonly property string configDir: Quickshell.env("HOME") + "/.config/duck"
