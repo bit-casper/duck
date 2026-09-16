@@ -75,18 +75,6 @@ FloatingWindow {
                     onClicked: root.config.set("animate", !root.config.animate)
                 }
 
-                Text {
-                    width: content.width
-                    wrapMode: Text.WordWrap
-                    textFormat: Text.PlainText
-                    topPadding: Style.spacing.sm
-                    bottomPadding: Style.spacing.lg
-                    color: Qt.darker(Color.foreground, 1.5)
-                    font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.caption
-                    text: "Icon size follows your theme's type scale and display scaling, so there is nothing to set."
-                }
-
                 // --- behavior -----------------------------------------------
 
                 PanelSectionHeader { text: "Behavior" }
@@ -118,39 +106,43 @@ FloatingWindow {
                     onClicked: root.config.set("edgeReveal", !root.config.edgeReveal)
                 }
 
+                // Side by side: the two delays are a pair, and stacking two
+                // narrow fields down the left edge left the row half empty.
                 Item {
                     width: content.width
-                    implicitHeight: revealField.implicitHeight + Style.spacing.md
-                    opacity: root.config.edgeReveal ? 1 : 0.4
+                    implicitHeight: delays.implicitHeight + Style.spacing.md
 
-                    NumberField {
-                        id: revealField
+                    Row {
+                        id: delays
+
                         anchors.left: parent.left
+                        anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        label: "Reveal delay (ms)"
-                        value: root.config.revealDelay
-                        from: 0
-                        to: 1000
-                        stepSize: 30
-                        enabled: root.config.edgeReveal
-                        onModified: function (next) { root.config.set("revealDelay", next); }
-                    }
-                }
+                        spacing: Style.spacing.controlGap
 
-                Item {
-                    width: content.width
-                    implicitHeight: hideField.implicitHeight + Style.spacing.md
+                        readonly property int fieldWidth: Math.floor((width - spacing) / 2)
 
-                    NumberField {
-                        id: hideField
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: "Hide delay (ms)"
-                        value: root.config.hideDelay
-                        from: 0
-                        to: 2000
-                        stepSize: 50
-                        onModified: function (next) { root.config.set("hideDelay", next); }
+                        NumberField {
+                            label: "Reveal delay (ms)"
+                            fieldWidth: delays.fieldWidth
+                            value: root.config.revealDelay
+                            from: 0
+                            to: 1000
+                            stepSize: 30
+                            enabled: root.config.edgeReveal
+                            opacity: root.config.edgeReveal ? 1 : 0.4
+                            onModified: function (next) { root.config.set("revealDelay", next); }
+                        }
+
+                        NumberField {
+                            label: "Hide delay (ms)"
+                            fieldWidth: delays.fieldWidth
+                            value: root.config.hideDelay
+                            from: 0
+                            to: 2000
+                            stepSize: 50
+                            onModified: function (next) { root.config.set("hideDelay", next); }
+                        }
                     }
                 }
 
