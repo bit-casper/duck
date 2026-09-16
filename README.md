@@ -36,6 +36,12 @@ Hyprland has no drop-in directory for user config and the Omarchy menu reads one
 fixed path, so those two shared files have to be edited. Duck writes only between
 `>>> duck: begin` / `<<< duck: end` markers and keeps one `.duck-backup` per file.
 
+`setup.sh` also restarts the Omarchy shell, but only when the running shell is
+on older plugin code than what is on disk. Replacing the plugin directory under
+a running shell — a reinstall, or checking out another branch in it — leaves its
+file watcher on the deleted inode, so it keeps drawing the version it started
+with. A fresh install never triggers it.
+
 `./uninstall.sh` reverses `setup.sh`. It deletes only the text between its own
 markers rather than restoring the backup, so anything you or Omarchy changed in
 those files meanwhile is preserved. `--purge` also removes your settings.
