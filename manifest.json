@@ -1,13 +1,16 @@
 {
   "schemaVersion": 1,
-  "id": "duck",
+  "id": "io.github.bit-casper.duck",
   "name": "Duck",
   "version": "1.0.0",
   "author": "bit-casper",
   "description": "A dock that hides at the bottom of the screen and slides up on hover or a keybinding.",
-  "kinds": ["panel"],
+  "kinds": [
+    "panel"
+  ],
   "keepLoaded": true,
   "entryPoints": {
     "panel": "Duck.qml"
-  }
+  },
+  "license": "MIT"
 }

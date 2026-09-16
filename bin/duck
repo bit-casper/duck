@@ -400,12 +400,17 @@ def cmd_get(args):
             info(f"{key:<14} {json.dumps(cfg.get(key))}")
 
 
+# The marketplace plugin id is namespaced and permanent; the IPC target the
+# rest of this script talks to is just "duck" and is unrelated to it.
+PLUGIN_ID = "io.github.bit-casper.duck"
+
+
 def cmd_enable(args):
-    subprocess.run(["omarchy", "plugin", "enable", "duck"], check=False)
+    subprocess.run(["omarchy", "plugin", "enable", PLUGIN_ID], check=False)
 
 
 def cmd_disable(args):
-    subprocess.run(["omarchy", "plugin", "disable", "duck"], check=False)
+    subprocess.run(["omarchy", "plugin", "disable", PLUGIN_ID], check=False)
 
 
 def cmd_restart(args):

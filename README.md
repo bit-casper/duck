@@ -11,7 +11,7 @@ colours, type scale, spacing and UI components rather than imitating them.
 
 ```bash
 omarchy plugin add https://github.com/bit-casper/duck.git --enable
-~/.config/omarchy/plugins/duck/setup.sh
+~/.config/omarchy/plugins/io.github.bit-casper.duck/setup.sh
 duck add ghostty chromium
 ```
 
@@ -21,8 +21,8 @@ cannot ship itself — the Hyprland bindings, the Omarchy menu entry, and the
 
 ### What it touches
 
-`omarchy plugin add` owns `~/.config/omarchy/plugins/duck/`, and
-`omarchy plugin remove duck` takes it away again. `setup.sh` adds:
+`omarchy plugin add` owns `~/.config/omarchy/plugins/io.github.bit-casper.duck/`,
+and `omarchy plugin remove io.github.bit-casper.duck` takes it away again. `setup.sh` adds:
 
 | Path | What |
 |---|---|
@@ -134,6 +134,28 @@ uninstall.sh      Reverses setup.sh
 
 Nothing here is a QML singleton: Omarchy's plugins do not use them, and state is
 handed down from `Duck.qml` explicitly.
+
+## Requirements
+
+Omarchy (Quattro or later) with its Quickshell-based shell — Duck loads as a
+shell plugin and uses `qs.Commons` and `qs.Ui`.
+
+It shells out to a few things already present on an Omarchy system:
+
+| Command | Used for |
+|---|---|
+| `hyprctl` | reading `border_size` / `gaps_out`, and grouped-window focus forwarding |
+| `fc-match` | resolving the system monospace font |
+| `find` | building the icon index that covers `hicolor`-only icons |
+| `python3` | the `duck` CLI |
+| `omarchy-shell` | how the CLI talks to the plugin |
+
+No other external dependencies, no network access, and nothing is downloaded at
+runtime.
+
+## License
+
+[MIT](LICENSE) © Casper Frost
 
 ## Notes
 
