@@ -7,10 +7,12 @@
 #
 # Footprint, in full:
 #   ~/.local/bin/duck           symlink to this plugin's bin/duck
-#   ~/.config/hypr/duck.lua     Duck's Hyprland config (bindings, window rule)
-#   ~/.config/hypr/hyprland.lua one `require` line between BEGIN/END markers
 #   omarchy-menu.jsonc          Duck's menu rows, between BEGIN/END markers
 #   ~/.config/duck/config.json  settings
+#
+# Nothing is written to the Hyprland config. Bindings and the settings window
+# rule are registered with the running compositor by the plugin itself, so they
+# exist only while Duck is loaded.
 #
 # ./uninstall.sh removes every one of them. What it deliberately leaves behind
 # is content that was never Duck's: a duck already sitting in ~/.local/bin is
@@ -60,30 +62,32 @@ mkdir -p "$BIN_DIR" "$HYPR_DIR" "$CONF_DIR"
 
 link "$REPO/bin/duck" "$BIN_DIR/duck"
 
-# Earlier versions appended separate blocks to three different files. Fold them
-# into the single owned file so an uninstall has one thing to undo.
-migrated=0
+# Duck no longer writes anything into the Hyprland config. The plugin registers
+# its bindings and its window rule with the running compositor at load, through
+# `hyprctl eval`, so there is nothing here for a removed plugin to leave behind.
+#
+# Two earlier shapes did write, and both are taken back out — including on a
+# machine that never runs uninstall.sh, because setup.sh is what a reinstall or
+# an update runs.
 for file in bindings.lua autostart.lua hyprland.lua; do
   if [[ -f "$HYPR_DIR/$file" ]] && hypr_has_legacy "$HYPR_DIR/$file"; then
     hypr_strip_legacy "$HYPR_DIR/$file"
     say "migrated $file (removed Duck's old inline block)"
-    migrated=1
   fi
 done
-[[ $migrated -eq 1 ]] && say "         Duck's Hyprland config now lives in hypr/duck.lua"
-
-if [[ -f "$HYPR_DIR/duck.lua" ]]; then
-  say "kept     $HYPR_DIR/duck.lua (yours; not overwritten)"
-else
-  cp "$REPO/hypr/duck.lua" "$HYPR_DIR/duck.lua"
-  say "created  $HYPR_DIR/duck.lua"
-fi
 
 if hypr_has_block "$HYPR_DIR/hyprland.lua"; then
-  say "ok       hyprland.lua already loads Duck"
-else
-  hypr_add_block "$HYPR_DIR/hyprland.lua"
-  say "updated  hyprland.lua (one require line, between markers)"
+  hypr_remove_block "$HYPR_DIR/hyprland.lua"
+  say "migrated hyprland.lua (dropped Duck's require line)"
+fi
+
+# duck.lua was documented as yours to edit, so it is backed up rather than just
+# deleted -- the keys it binds are Duck's own defaults now.
+if [[ -f "$HYPR_DIR/duck.lua" ]]; then
+  _hypr_backup "$HYPR_DIR/duck.lua"
+  rm "$HYPR_DIR/duck.lua"
+  say "migrated removed duck.lua (bindings are registered at runtime now)"
+  say "         a copy is kept at duck.lua.duck-backup"
 fi
 
 # Adds a searchable "Duck" entry to the Omarchy menu (Super+Space).

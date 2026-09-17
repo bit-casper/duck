@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 #
-# Shared helpers for the one block Duck owns inside hyprland.lua, plus removal
-# of the inline blocks older versions appended to other hypr config files.
+# Shared helpers for the Omarchy menu block Duck owns, plus removal of the
+# Hyprland edits earlier versions made and this one no longer does.
+#
+# Nothing here adds anything to the Hyprland config any more -- the plugin
+# registers its bindings with the running compositor instead. What remains on
+# that side is removal, which has to keep working for machines that still carry
+# the old block.
 #
 # Every edit is delimited by markers so it can be removed exactly, without
 # rewriting anything the user put there.
@@ -18,18 +23,6 @@ _hypr_backup() {
 
 hypr_has_block() {
   [[ -f "$1" ]] && grep -qF -- "$DUCK_BEGIN" "$1"
-}
-
-hypr_add_block() {
-  local file="$1"
-  [[ -f "$file" ]] || touch "$file"
-  _hypr_backup "$file"
-
-  {
-    printf '\n%s\n' "$DUCK_BEGIN"
-    printf '%s\n' 'require("hypr.duck")'
-    printf '%s\n' "$DUCK_END"
-  } >>"$file"
 }
 
 hypr_remove_block() {
