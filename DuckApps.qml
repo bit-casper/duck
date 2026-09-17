@@ -246,7 +246,39 @@ Item {
     }
 
     function launch(item) {
-        if (item.entry) item.entry.execute();
-        else console.warn("duck: no desktop entry for", item.id);
+        if (!item.entry) {
+            console.warn("duck: no desktop entry for", item.id);
+            return;
+        }
+
+        // Quickshell's execute() runs the bare Exec line and does not act on
+        // Terminal=true — it exposes runInTerminal separately and leaves the
+        // decision to the shell. A TUI started that way gets no tty and exits
+        // immediately, so the icon simply does nothing when clicked.
+        //
+        // Hand those to Omarchy's own launcher rather than picking a terminal
+        // here: it opens whichever one `omarchy default terminal` selected, so
+        // the choice stays in the one place the user already sets it. It also
+        // starts the app under uwsm rather than as a child of the shell, which
+        // is what keeps it alive across a shell restart.
+        //
+        // The window that appears belongs to the terminal emulator, not to the
+        // app: it carries the emulator's app-id and only the title names the
+        // TUI. --app-id asks for better, and terminals that implement it (foot)
+        // oblige, but ghostty ignores it. So a TUI never joins `windows` and the
+        // running dot stays dark for it. Matching it back by title is the only
+        // other handle, and a TUI that writes its state into the title — a music
+        // player naming the current track — slips straight out of it again.
+        if (item.entry.runInTerminal) {
+            const appId = item.entry.startupClass || item.entry.id;
+            const argv = ["omarchy-launch-tui", "--app-id=" + appId];
+            const command = item.entry.command;
+
+            for (let i = 0; i < command.length; i++) argv.push(command[i]);
+            Quickshell.execDetached(argv);
+            return;
+        }
+
+        item.entry.execute();
     }
 }
