@@ -26,6 +26,11 @@ Item {
     DuckIcons { id: iconsState }
     DuckHypr { id: hyprState }
 
+    // Registers Duck's keybindings and window rule with the running Hyprland
+    // rather than writing them into the user's config, so removing the plugin
+    // cannot leave them behind.
+    DuckKeys { id: keysState }
+
     DuckApps {
         id: appsState
         config: configState
