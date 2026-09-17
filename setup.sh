@@ -8,7 +8,6 @@
 # Footprint, in full:
 #   ~/.local/bin/duck           symlink to this plugin's bin/duck
 #   omarchy-menu.jsonc          Duck's menu rows, between BEGIN/END markers
-#   ~/.config/duck/config.json  settings
 #
 # Nothing is written to the Hyprland config. Bindings and the settings window
 # rule are registered with the running compositor by the plugin itself, so they
@@ -28,7 +27,6 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
 HYPR_DIR="$HOME/.config/hypr"
 MENU_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
-CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/duck"
 
 # The id the shell knows this plugin by; `omarchy plugin` matches it exactly.
 PLUGIN_ID="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$REPO/manifest.json" | head -1)"
@@ -58,7 +56,8 @@ link() {
 }
 
 echo "Setting up Duck from $REPO"
-mkdir -p "$BIN_DIR" "$HYPR_DIR" "$CONF_DIR"
+# The plugin creates its own config directory, so setup.sh no longer needs to.
+mkdir -p "$BIN_DIR"
 
 link "$REPO/bin/duck" "$BIN_DIR/duck"
 
@@ -98,24 +97,6 @@ elif [[ -d "$(dirname "$MENU_FILE")" ]]; then
   say "updated  Omarchy menu (Super+Space -> search \"Duck\")"
 else
   say "skipped  Omarchy menu (no extensions directory)"
-fi
-
-if [[ -f "$CONF_DIR/config.json" ]]; then
-  say "kept     $CONF_DIR/config.json"
-else
-  cat >"$CONF_DIR/config.json" <<'JSON'
-{
-  "apps": [],
-  "showRunning": true,
-  "bordered": true,
-  "pushWindows": false,
-  "edgeReveal": true,
-  "revealDelay": 90,
-  "hideDelay": 350,
-  "animate": true
-}
-JSON
-  say "created  $CONF_DIR/config.json"
 fi
 
 if command -v hyprctl >/dev/null 2>&1; then

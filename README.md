@@ -15,9 +15,9 @@ omarchy plugin add https://github.com/bit-casper/duck.git --enable
 duck add ghostty chromium
 ```
 
-The first command installs the dock. The second sets up the parts a plugin
-cannot ship itself — the Hyprland bindings, the Omarchy menu entry, and the
-`duck` CLI.
+The first command installs the dock, keybindings included — those are registered
+by the plugin itself. The second adds the two things a plugin still cannot ship:
+the Omarchy menu entry and the `duck` CLI.
 
 ### What it touches
 
@@ -27,14 +27,25 @@ and `omarchy plugin remove io.github.bit-casper.duck` takes it away again. `setu
 | Path | What |
 |---|---|
 | `~/.local/bin/duck` | symlink to the plugin's `bin/duck` |
-| `~/.config/hypr/duck.lua` | Duck's Hyprland config — bindings and a window rule |
-| `~/.config/hypr/hyprland.lua` | one `require` line, between markers |
 | `~/.config/omarchy/extensions/omarchy-menu.jsonc` | Duck's menu rows, between markers |
 | `~/.config/duck/config.json` | settings |
 
-Hyprland has no drop-in directory for user config and the Omarchy menu reads one
-fixed path, so those two shared files have to be edited. Duck writes only between
-`>>> duck: begin` / `<<< duck: end` markers and keeps one `.duck-backup` per file.
+**Nothing is written to the Hyprland config.** The keybindings and the settings
+window rule are registered with the running compositor when the plugin loads,
+through `hyprctl eval`, and revoked when it unloads — `omarchy plugin remove`
+disables a plugin before deleting it, so Duck is still there to take them back
+out. A binding registered that way lives only in the running Hyprland, so even a
+shell killed outright leaves nothing behind: the next `hyprctl reload` erases it.
+
+That matters because the alternative fails badly. Duck borrows
+`Super+Ctrl+Left/Right` from Omarchy's grouped-window focus, and a binding file
+left behind by a removed plugin would keep those keys captured — dead, with
+nothing on screen to say why. Earlier versions did install one; `setup.sh`
+removes it if it finds it.
+
+The Omarchy menu still reads one fixed path with no drop-in, so that file is
+edited. Duck writes only between `>>> duck: begin` / `<<< duck: end` markers and
+keeps one `.duck-backup` per file.
 
 `setup.sh` also restarts the Omarchy shell, but only when the running shell is
 on older plugin code than what is on disk. Replacing the plugin directory under
@@ -130,11 +141,11 @@ DuckConfig.qml    config.json, watched and hot-reloaded
 DuckApps.qml      Pinned + running apps, merged into the dock model
 DuckIcons.qml     Icon resolution, with a filesystem fallback index
 DuckHypr.qml      The two Hyprland values Omarchy's Style does not expose
+DuckKeys.qml      Bindings and window rule, registered at runtime
 Settings.qml      Settings window, built from Omarchy's Ui components
 bin/duck          CLI
-hypr/duck.lua     Hyprland bindings and window rule
 lib/              Marker-block helpers shared by setup and uninstall
-setup.sh          Keys, menu entry and CLI (what a plugin cannot ship)
+setup.sh          Menu entry and CLI (what a plugin cannot ship)
 uninstall.sh      Reverses setup.sh
 ```
 
