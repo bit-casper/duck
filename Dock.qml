@@ -66,34 +66,24 @@ PanelWindow {
 
     readonly property var items: win.apps.items
 
-    function submap(name) {
-        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.submap(\"" + name + "\")"]);
-    }
-
     function show(keyboard) {
         if (keyboard) {
-            const wasOpen = win.keyOpen;
             win.keyOpen = true;
             if (win.selectedIndex < 0 && win.items.length > 0) win.selectedIndex = 0;
-            if (!wasOpen) submap("duck");
         } else {
             win.mouseOpen = true;
         }
     }
 
     function hide() {
-        const wasKeyboard = win.keyOpen;
-
         win.mouseOpen = false;
         win.keyOpen = false;
         win.selectedIndex = -1;
         drag.reset();
-
-        // Always hand the keyboard back, however the dock came to close.
-        if (wasKeyboard) submap("reset");
     }
 
-    // Navigation, driven by the submap rather than by key events.
+    // Navigation, driven by the global bindings in hypr/duck.lua rather than by
+    // key events.
     function nav(action) {
         if (action === "toggle") {
             win.toggle();
@@ -168,9 +158,9 @@ PanelWindow {
     WlrLayershell.namespace: "duck-dock"
     // Never takes keyboard focus. An Exclusive grab routes every keystroke to
     // the dock and leaves the desktop feeling frozen, and OnDemand delivers no
-    // keys at all. Navigation arrives instead as IPC calls from the Hyprland
-    // submap declared in hypr/duck.lua, which rebinds only the arrow keys and
-    // lets everything else type through to the focused window.
+    // keys at all. Navigation arrives instead through the global shortcuts in
+    // Duck.qml, bound in hypr/duck.lua to Super combinations only, so every
+    // other key types through to the focused window untouched.
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     mask: Region {

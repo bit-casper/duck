@@ -44,6 +44,14 @@ fi
 
 unlink_ours "$BIN_DIR/duck" "$REPO/bin/duck"
 
+# A duck already at that path when setup.sh ran was moved aside, not
+# overwritten. It was never ours, so report where it went rather than deleting
+# it or putting it back over something the user may since have chosen.
+while IFS= read -r saved; do
+  [[ -n "$saved" ]] || continue
+  say "left     $saved (yours, moved aside at install)"
+done < <(find "$BIN_DIR" -maxdepth 1 -name 'duck.bak.*' 2>/dev/null | sort || true)
+
 if hypr_has_block "$HYPR_DIR/hyprland.lua"; then
   hypr_remove_block "$HYPR_DIR/hyprland.lua"
   say "removed  Duck's require line from hyprland.lua"
