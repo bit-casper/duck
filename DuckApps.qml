@@ -36,6 +36,22 @@ Item {
     }
 
 
+    // Proton games launched through umu arrive with a window app-id of
+    // `steam_app_<gameid>`, where the gameid is what GAMEID= was set to without
+    // its `umu-` prefix. Omarchy's Battle.net launcher sets GAMEID=umu-battlenet,
+    // so the window turns up as `steam_app_battlenet` while its desktop entry is
+    // plain `battlenet`, and nothing in entryFor() brings the two together --
+    // the entry even declares StartupWMClass=battle.net.exe, which is not what
+    // the window ends up carrying either.
+    //
+    // A real Steam title uses a numeric id (`steam_app_440`) that names no
+    // desktop file, so those are left alone rather than guessed at.
+    function unwrapLauncher(appId) {
+        const match = /^steam_app_(.+)$/.exec(normalize(appId));
+        if (!match || /^\d+$/.test(match[1])) return "";
+        return match[1];
+    }
+
     // Omarchy runs many "apps" as browser PWAs. Their window app-id looks like
     // `brave-discord.gg__tXFUdasqhY-Default`, which matches no desktop file, so
     // they would all collapse onto the generic icon. Recover the site from the
@@ -88,16 +104,34 @@ Item {
         }
 
         if (tailMatch) return tailMatch;
+
+        const unwrapped = unwrapLauncher(id);
+        if (unwrapped.length > 0) {
+            // Terminates: the unwrapped id no longer carries the prefix.
+            const viaLauncher = entryFor(unwrapped);
+            if (viaLauncher) return viaLauncher;
+        }
+
         return webAppEntry(id);
     }
 
-    function matches(entry, appId) {
-        if (!entry || !appId) return false;
+    function matchesId(entry, appId) {
         const target = normalize(appId);
         if (normalize(entry.id) === target) return true;
         if (entry.startupClass && normalize(entry.startupClass) === target) return true;
         // Last resort: `ghostty` should still match `com.mitchellh.ghostty`.
         return lastSegment(entry.id) === lastSegment(appId);
+    }
+
+    // Has to unwrap too, not just entryFor: without it a pinned Battle.net never
+    // claims its own running window, so the dock shows the app twice -- once
+    // pinned with the right icon, once as a stranger with the fallback one.
+    function matches(entry, appId) {
+        if (!entry || !appId) return false;
+        if (matchesId(entry, appId)) return true;
+
+        const unwrapped = unwrapLauncher(appId);
+        return unwrapped.length > 0 && matchesId(entry, unwrapped);
     }
 
     // Quickshell surfaces are shell chrome, not apps — Duck's own settings

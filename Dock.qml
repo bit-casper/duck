@@ -94,7 +94,11 @@ PanelWindow {
         // the dock is down. Duck borrows them only while it is on screen and
         // hands the keypress back otherwise, so the original binding still
         // works rather than being silently taken over.
-        if (!win.keyOpen && (action === "prev" || action === "next")) {
+        //
+        // The test is whether the dock is up, not how it was raised. Keying off
+        // keyOpen meant a dock opened by hovering the screen edge still forwarded
+        // the arrows away, so it sat there visibly open and ignoring the keyboard.
+        if (!win.open && (action === "prev" || action === "next")) {
             Quickshell.execDetached(["hyprctl", "dispatch",
                 action === "prev" ? "hl.dsp.group.prev()" : "hl.dsp.group.next()"]);
             return;
@@ -106,7 +110,17 @@ PanelWindow {
             return;
         }
 
-        if (win.selectedIndex < 0) win.selectedIndex = 0;
+        // Using the keyboard claims a dock the mouse opened. Without this the
+        // hide timer, armed when the pointer leaves, would pull the dock out
+        // from under someone who had started navigating it.
+        win.keyOpen = true;
+        hideTimer.stop();
+
+        // Start from whatever the pointer is on rather than the first icon, so
+        // the first arrow press moves from where the user is looking.
+        if (win.selectedIndex < 0)
+            win.selectedIndex = hoverArea.hoverIndex >= 0 ? hoverArea.hoverIndex : 0;
+
         const item = win.items[win.selectedIndex];
 
         if (action === "prev" || action === "next") {
@@ -175,7 +189,10 @@ PanelWindow {
     Timer {
         id: hideTimer
         interval: win.config.hideDelay
-        onTriggered: if (!win.keyOpen) win.mouseOpen = false
+        // Closes outright rather than only dropping mouseOpen: a dock raised
+        // from the keyboard has to answer the pointer leaving it too, and
+        // clearing mouseOpen alone would leave keyOpen holding it on screen.
+        onTriggered: win.hide()
     }
 
     Timer {
@@ -432,10 +449,15 @@ PanelWindow {
             if (!win.open && win.config.edgeReveal) revealTimer.restart();
         }
 
+        // Always arm the timer, however the dock was raised. Skipping it while
+        // keyOpen meant a dock opened from the keyboard could not be dismissed
+        // by moving the pointer off it -- the one mouse gesture people reach for
+        // first. The pointer has to have been over the dock for this to fire at
+        // all, so a keyboard user whose mouse is elsewhere is unaffected.
         onExited: {
             revealTimer.stop();
             hoverIndex = -1;
-            if (!win.keyOpen) hideTimer.restart();
+            hideTimer.restart();
         }
 
         onPositionChanged: function (mouse) {
@@ -488,8 +510,10 @@ PanelWindow {
             pressIndex = -1;
 
             if (mouse.button === Qt.LeftButton) {
+                // Launching or focusing an app is the end of the interaction
+                // whichever way the dock was raised, so it closes either way.
                 win.apps.activate(item);
-                if (win.keyOpen) win.hide();
+                win.hide();
             } else if (mouse.button === Qt.MiddleButton) {
                 win.apps.launch(item);
             } else if (mouse.button === Qt.RightButton) {
