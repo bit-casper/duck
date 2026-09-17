@@ -170,8 +170,23 @@ Item {
         }
 
         function set(key: string, value: string): string {
+            // Own properties only. Testing `defaults[key] !== undefined` reaches
+            // the prototype too, so `constructor`, `toString`, `valueOf` and
+            // `hasOwnProperty` all read as real settings and get written to
+            // config.json as keys of their own.
+            if (!Object.prototype.hasOwnProperty.call(root.config.defaults, key))
+                return "unknown setting '" + key + "'";
+
+            // `apps` is a list, and every other route into it resolves a desktop
+            // id first. Assigning it here would store the raw string: the dock
+            // then indexes it a character at a time, the watcher ignores the
+            // write because it is our own, and the pinned list is already gone
+            // from disk by the time a restart parses it back to empty. The CLI
+            // has always refused this; the IPC path never did.
+            if (key === "apps")
+                return "'apps' is a list — use `duck add` and `duck rm`";
+
             const current = root.config.defaults[key];
-            if (current === undefined) return "unknown setting '" + key + "'";
 
             let parsed = value;
             if (typeof current === "boolean") parsed = (value === "true" || value === "1" || value === "on");
