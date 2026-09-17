@@ -193,16 +193,16 @@ Item {
             if (!Object.prototype.hasOwnProperty.call(root.config.defaults, key))
                 return "unknown setting '" + key + "'";
 
-            // `apps` is a list, and every other route into it resolves a desktop
-            // id first. Assigning it here would store the raw string: the dock
-            // then indexes it a character at a time, the watcher ignores the
-            // write because it is our own, and the pinned list is already gone
-            // from disk by the time a restart parses it back to empty. The CLI
-            // has always refused this; the IPC path never did.
-            if (key === "apps")
-                return "'apps' is a list — use `duck add` and `duck rm`";
-
             const current = root.config.defaults[key];
+
+            // Only scalars can be set from a string. `apps` and `keys` are a
+            // list and an object, and assigning a string to either wedges the
+            // dock -- the pinned list gets indexed a character at a time, or
+            // every keybinding disappears. Refused by type rather than by name:
+            // naming them is what went wrong before, when `apps` was guarded
+            // and `keys`, added later, was not.
+            if (current !== null && typeof current === "object")
+                return "'" + key + "' cannot be set from the command line; edit config.json";
 
             let parsed = value;
             if (typeof current === "boolean") parsed = (value === "true" || value === "1" || value === "on");

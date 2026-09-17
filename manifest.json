@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "io.github.bit-casper.duck",
   "name": "Duck",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "bit-casper",
-  "description": "A dock that hides at the bottom of the screen and slides up on hover or a keybinding.",
+  "description": "A dock that stays hidden at the bottom edge and slides up on hover or a keybinding. Follows the active Omarchy theme, and needs no install script.",
   "kinds": [
     "panel"
   ],
