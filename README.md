@@ -151,10 +151,10 @@ It shells out to a few things already present on an Omarchy system:
 | Command | Used for |
 |---|---|
 | `hyprctl` | reading `border_size` / `gaps_out`, and grouped-window focus forwarding |
-| `fc-match` | resolving the system monospace font |
 | `find` | building the icon index that covers `hicolor`-only icons |
 | `python3` | the `duck` CLI |
 | `omarchy-shell` | how the CLI talks to the plugin |
+| `omarchy-launch-tui` | launching apps whose desktop entry sets `Terminal=true` |
 
 No other external dependencies, no network access, and nothing is downloaded at
 runtime.
@@ -184,6 +184,7 @@ Several things behave differently than you might expect, each for a reason:
 - **Icons are resolved against a filesystem index, not just the icon theme.** Qt's
   themed lookup misses icons that live only in the `hicolor` fallback theme —
   Ghostty is one — so `Icons.qml` keeps its own index as a fallback.
-- **Fonts follow fontconfig**, resolved with `fc-match` exactly as Omarchy's shell
-  does, and `~/.config/fontconfig/fonts.conf` is watched so `omarchy font set`
-  repaints Duck without a restart.
+- **Fonts come from the shell, not from Duck.** `Style.font` is already resolved
+  against fontconfig by Omarchy, so reading it through `qs.Commons` means
+  `omarchy font set` repaints Duck without a restart and without Duck running
+  any font lookup of its own.
