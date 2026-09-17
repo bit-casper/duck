@@ -12,9 +12,13 @@
 #   omarchy-menu.jsonc          Duck's menu rows, between BEGIN/END markers
 #   ~/.config/duck/config.json  settings
 #
-# ./uninstall.sh removes every one of them. Nothing else is modified. The one
-# action taken beyond those paths is restarting the Omarchy shell, and only
-# when it is found to be running older plugin code than what is on disk.
+# ./uninstall.sh removes every one of them. What it deliberately leaves behind
+# is content that was never Duck's: a duck already sitting in ~/.local/bin is
+# moved aside to duck.bak.<timestamp> rather than overwritten, and the
+# .duck-backup of a file edited between markers is kept whenever it still
+# differs from the live file. Uninstall reports both instead of deleting them.
+# The one action taken beyond these paths is restarting the Omarchy shell, and
+# only when it is found to be running older plugin code than what is on disk.
 
 set -euo pipefail
 

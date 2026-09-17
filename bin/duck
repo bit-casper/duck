@@ -11,9 +11,7 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
-import time
 import sys
 
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "duck")
@@ -24,14 +22,16 @@ DEFAULTS = {
     "showRunning": True,
     "bordered": True,
     "pushWindows": False,
-    "iconSize": 44,
-    "padding": 8,
-    "gap": 10,
     "revealDelay": 90,
     "hideDelay": 350,
     "edgeReveal": True,
     "animate": True,
 }
+
+# Settings that used to exist and are now derived from the display scale. The
+# dock drops them on its next write (DuckConfig.retired); dropping them here too
+# is what keeps the CLI from reporting a value the dock no longer reads.
+RETIRED = ("iconSize", "padding", "gap")
 
 
 # --- output helpers ---------------------------------------------------------
@@ -65,6 +65,9 @@ def load():
 
 
 def save(cfg):
+    for key in RETIRED:
+        cfg.pop(key, None)
+
     os.makedirs(CONFIG_DIR, exist_ok=True)
     # Write-then-rename so the dock's file watcher never sees a partial file.
     tmp = CONFIG_PATH + ".tmp"
