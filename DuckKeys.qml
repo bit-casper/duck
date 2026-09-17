@@ -44,6 +44,7 @@ Item {
         "next": "Duck: select right (grouped-window focus while closed)",
         "moveprev": "Duck: move the selected app left",
         "movenext": "Duck: move the selected app right",
+        "unpin": "Duck: unpin the selected app",
         "hide": "Duck: close the dock"
     })
 
