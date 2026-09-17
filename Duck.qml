@@ -34,6 +34,12 @@ Item {
         config: configState
     }
 
+    // The two things a plugin still cannot declare: a command on PATH and rows
+    // in the Omarchy menu. Both are made on load and unmade on unload, so no
+    // install script owns them.
+    DuckCli { id: cliState }
+    DuckMenu { id: menuState }
+
     DuckApps {
         id: appsState
         config: configState

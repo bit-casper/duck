@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
+import "blocks.js" as Blocks
 
 // Duck's Hyprland bindings and its one window rule, registered at runtime.
 //
@@ -111,8 +113,45 @@ Item {
         root.apply();
     }
 
-    Component.onCompleted: root.sync()
+    Component.onCompleted: {
+        root.migrate();
+        root.sync();
+    }
+
     Component.onDestruction: root.revoke(root.applied)
+
+    // --- migration ----------------------------------------------------------
+    //
+    // Versions through 1.0 installed ~/.config/hypr/duck.lua and a require line
+    // in hyprland.lua. With setup.sh gone nothing else would ever remove them,
+    // and left in place they keep Super+Ctrl+Left/Right captured on behalf of a
+    // plugin that may not even be loaded. Duck clears its own past footprint.
+    //
+    // duck.lua is kept as a backup rather than deleted outright: it was
+    // documented as the user's to edit.
+    function migrate() {
+        Quickshell.execDetached(["sh", "-c",
+            '[ -f "$1" ] || exit 0\n'
+            + '[ -e "$1.duck-backup" ] || cp "$1" "$1.duck-backup"\n'
+            + 'rm -f "$1"',
+            "sh", Quickshell.env("HOME") + "/.config/hypr/duck.lua"]);
+    }
+
+    // Read once, with no watcher: this file is nothing to do with Duck beyond
+    // the block an older version left in it.
+    FileView {
+        id: hyprland
+
+        path: Quickshell.env("HOME") + "/.config/hypr/hyprland.lua"
+        preload: true
+        printErrors: false
+
+        onLoaded: {
+            const current = text();
+            const next = Blocks.strip(current, "--");
+            if (next !== current) setText(next.replace(/\n+$/, "\n"));
+        }
+    }
 
     Connections {
         target: root.config
