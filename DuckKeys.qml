@@ -32,12 +32,12 @@ Item {
     // Only the actions that actually carry a key. An empty string means the
     // user cleared it, which has to read as "leave it alone", not as a bind to
     // the empty string.
-    function bound() {
+    function boundIn(map) {
         const list = [];
-        const map = root.keys || ({});
+        const source = map || ({});
 
-        for (const action in map) {
-            const combo = (map[action] || "").toString().trim();
+        for (const action in source) {
+            const combo = (source[action] || "").toString().trim();
             if (combo.length > 0) list.push({ "action": action, "combo": combo });
         }
         return list;
@@ -53,7 +53,7 @@ Item {
     // firing the action once from the config and once from here, which reads as
     // the dock opening and shutting again immediately.
     function apply() {
-        const list = root.bound();
+        const list = root.boundIn(root.keys);
         let lua = "";
 
         for (let i = 0; i < list.length; i++) {
@@ -74,8 +74,11 @@ Item {
     // whenever the dock is closed, so this is the behaviour Duck was standing in
     // front of rather than a guess at what Omarchy binds. A `hyprctl reload`
     // restores them too, which is what covers a shell that never got here.
-    function revoke() {
-        const list = root.bound();
+    // Takes the map that was actually registered, never the current one. On a
+    // key change those differ, and unbinding the new set would leave the key it
+    // moved away from still captured.
+    function revoke(map) {
+        const list = root.boundIn(map);
         let lua = "";
 
         for (let i = 0; i < list.length; i++)
@@ -95,21 +98,21 @@ Item {
         root.runLua(lua);
     }
 
-    // Changing a key in config.json has to take the old one back out, so the
-    // previous set is revoked against the spec that registered it.
-    property string appliedSpec: ""
+    // The map as last handed to Hyprland, kept so a later change can be undone
+    // against what was actually registered.
+    property var applied: null
 
     function sync() {
         const spec = JSON.stringify(root.keys);
-        if (spec === root.appliedSpec) return;
+        if (root.applied !== null && JSON.stringify(root.applied) === spec) return;
 
-        if (root.appliedSpec.length > 0) root.revoke();
-        root.appliedSpec = spec;
+        if (root.applied !== null) root.revoke(root.applied);
+        root.applied = JSON.parse(spec);
         root.apply();
     }
 
     Component.onCompleted: root.sync()
-    Component.onDestruction: root.revoke()
+    Component.onDestruction: root.revoke(root.applied)
 
     Connections {
         target: root.config
