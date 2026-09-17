@@ -83,7 +83,7 @@ FloatingWindow {
                     width: content.width
                     label: "Push windows up"
                     description: checked ? "Windows resize to make room for the dock"
-                                         : "Dock overlays whatever is on screen"
+                                         : "The dock overlays whatever is on screen"
                     checked: root.config.pushWindows
                     onClicked: root.config.set("pushWindows", !root.config.pushWindows)
                 }
@@ -100,7 +100,7 @@ FloatingWindow {
                 Toggle {
                     width: content.width
                     label: "Reveal on bottom edge"
-                    description: checked ? "Dock slides up when the mouse reaches the edge"
+                    description: checked ? "The dock slides up when the mouse reaches the edge"
                                          : "Keyboard only (Super+Ctrl+Down)"
                     checked: root.config.edgeReveal
                     onClicked: root.config.set("edgeReveal", !root.config.edgeReveal)

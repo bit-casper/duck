@@ -68,7 +68,7 @@ The dock stays hidden until you ask for it:
 
 | Action | Result |
 |---|---|
-| Move the mouse to the bottom edge | Dock slides up |
+| Move the mouse to the bottom edge | The dock slides up |
 | `SUPER+CTRL+DOWN` | Open the dock — and close it again |
 | `SUPER+CTRL+LEFT` / `RIGHT` | Move the selection |
 | `SUPER+CTRL+UP` | Launch the selected app, or focus it if running |

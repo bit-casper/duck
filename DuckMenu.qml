@@ -21,11 +21,20 @@ Item {
     // JSONC, indented two spaces to sit with the menu's own rows.
     readonly property string prefix: "  //"
 
+    // Placed where Omarchy puts the equivalent rows for its own bar, rather than
+    // at the root of the menu. The root holds ten broad categories -- apps,
+    // setup, install, style and so on -- and a single plugin sitting among them
+    // reads as a category of its own, which it is not.
+    //
+    // The bar is the closest thing to Duck that Omarchy ships, and its rows are
+    // split in two: `style.bar` for what it looks like, `trigger.toggle.top-bar`
+    // for switching it on and off. Duck follows that.
+    //
+    // No restart row. `duck restart` restarts the shell, and Omarchy already
+    // offers exactly that at `update.process.shell`.
     readonly property var rows: [
-        '  "duck": {"icon":"󰇥","label":"Duck","description":"Dock settings and controls","aliases":["dock"]},',
-        '  "duck.settings": {"icon":"󰒓","label":"Settings","action":"duck settings"},',
-        '  "duck.toggle": {"icon":"","label":"Toggle dock","action":"duck toggle"},',
-        '  "duck.restart": {"icon":"","label":"Restart dock","action":"duck restart"},'
+        '  "style.duck": {"icon":"󰇥","label":"Duck","description":"Dock settings","aliases":["duck","dock"],"action":"duck settings"},',
+        '  "trigger.toggle.duck": {"icon":"","label":"Duck","action":"duck toggle"},'
     ]
 
     // Our own write echoing back through the watcher, ignored the way
