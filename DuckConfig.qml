@@ -30,7 +30,21 @@ Item {
         "edgeReveal": true,
         "revealDelay": 90,
         "hideDelay": 350,
-        "animate": true
+        "animate": true,
+
+        // Hyprland key strings, registered at runtime by DuckKeys. An empty
+        // string leaves the action unbound; `moveprev` / `movenext` ship that
+        // way because Super+Shift+Ctrl+arrows are a lot of modifier for
+        // something dragging an icon already does.
+        "keys": ({
+            "toggle": "SUPER + CTRL + DOWN",
+            "activate": "SUPER + CTRL + UP",
+            "prev": "SUPER + CTRL + LEFT",
+            "next": "SUPER + CTRL + RIGHT",
+            "moveprev": "",
+            "movenext": "",
+            "hide": ""
+        })
     })
 
     // Settings that used to exist and are now derived from the display scale.
@@ -47,6 +61,7 @@ Item {
     readonly property int revealDelay: values.revealDelay !== undefined ? values.revealDelay : defaults.revealDelay
     readonly property int hideDelay: values.hideDelay !== undefined ? values.hideDelay : defaults.hideDelay
     readonly property bool animate: values.animate !== undefined ? values.animate : defaults.animate
+    readonly property var keys: values.keys !== undefined ? values.keys : defaults.keys
 
     signal changed()
 
@@ -107,6 +122,12 @@ Item {
         root.values = merged;
         root.changed();
     }
+
+    // FileView will not create missing directories, and a write into one that
+    // does not exist is simply lost. setup.sh used to make this directory; the
+    // plugin owns it now, so settings can be saved on a machine where setup.sh
+    // was never run.
+    Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.configDir])
 
     Timer {
         id: writeTimer

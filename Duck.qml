@@ -26,6 +26,20 @@ Item {
     DuckIcons { id: iconsState }
     DuckHypr { id: hyprState }
 
+    // Registers Duck's keybindings and window rule with the running Hyprland
+    // rather than writing them into the user's config, so removing the plugin
+    // cannot leave them behind.
+    DuckKeys {
+        id: keysState
+        config: configState
+    }
+
+    // The two things a plugin still cannot declare: a command on PATH and rows
+    // in the Omarchy menu. Both are made on load and unmade on unload, so no
+    // install script owns them.
+    DuckCli { id: cliState }
+    DuckMenu { id: menuState }
+
     DuckApps {
         id: appsState
         config: configState
