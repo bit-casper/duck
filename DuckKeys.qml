@@ -56,13 +56,36 @@ Item {
     // Only the actions that actually carry a key. An empty string means the
     // user cleared it, which has to read as "leave it alone", not as a bind to
     // the empty string.
+    // These two strings are pasted into Lua source and handed to `hyprctl eval`,
+    // so anything that could close the quote and keep going has to be refused
+    // rather than escaped. A key string is modifiers, names and separators; an
+    // action is a bare identifier naming a GlobalShortcut. Nothing legitimate
+    // needs a quote, a bracket or a newline.
+    //
+    // config.json is the user's own file, so this is not a privilege boundary --
+    // it is the difference between a typo being ignored and a typo running as
+    // Lua inside the compositor.
+    readonly property var safeCombo: /^[A-Za-z0-9_+:\- ]+$/
+    readonly property var safeAction: /^[A-Za-z0-9_-]+$/
+
     function boundIn(map) {
         const list = [];
         const source = map || ({});
 
         for (const action in source) {
             const combo = (source[action] || "").toString().trim();
-            if (combo.length > 0) list.push({ "action": action, "combo": combo });
+            if (combo.length === 0) continue;
+
+            if (!root.safeAction.test(action)) {
+                console.warn("duck: ignoring key for unusable action name", action);
+                continue;
+            }
+            if (!root.safeCombo.test(combo)) {
+                console.warn("duck: ignoring unusable key string for", action, "->", combo);
+                continue;
+            }
+
+            list.push({ "action": action, "combo": combo });
         }
         return list;
     }

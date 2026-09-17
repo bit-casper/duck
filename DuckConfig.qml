@@ -100,6 +100,25 @@ Item {
         file.setText(root.lastWritten);
     }
 
+    // A value whose type disagrees with its default is dropped rather than
+    // honoured. None of them degrade gracefully: a string where `apps` belongs
+    // gets indexed one character at a time, and a string where `keys` belongs
+    // takes every keybinding with it, leaving the dock reachable only by mouse.
+    //
+    // Checked by type against the default rather than by naming the keys that
+    // need it, because naming them is what went wrong before -- `apps` was
+    // guarded and `keys`, added later, was not.
+    function sane(value, fallback) {
+        if (Array.isArray(fallback))
+            return Array.isArray(value) ? value : fallback;
+
+        if (fallback !== null && typeof fallback === "object")
+            return (value !== null && typeof value === "object" && !Array.isArray(value))
+                ? value : fallback;
+
+        return typeof value === typeof fallback ? value : fallback;
+    }
+
     function parse(text) {
         let parsed = {};
         try {
@@ -115,9 +134,8 @@ Item {
         const merged = clone(root.defaults);
         for (const key in parsed) {
             if (root.retired.indexOf(key) !== -1) continue;
-            merged[key] = parsed[key];
+            merged[key] = sane(parsed[key], root.defaults[key]);
         }
-        if (!Array.isArray(merged.apps)) merged.apps = [];
 
         root.values = merged;
         root.changed();
