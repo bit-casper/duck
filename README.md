@@ -167,7 +167,8 @@ It shells out to a few things already present on an Omarchy system:
 | Command | Used for |
 |---|---|
 | `hyprctl` | registering bindings and the window rule, reading `border_size` / `gaps_out`, and grouped-window focus forwarding |
-| `sh` | the few one-liners that make and unmake the CLI symlink |
+| `sh` | the short one-liners below, so their arguments are passed rather than interpolated |
+| `mkdir`, `ln`, `readlink`, `rm`, `cp`, `dirname`, `printf` | making and unmaking the CLI symlink, creating `~/.config/duck`, and backing up the Hyprland file older versions installed |
 | `find` | building the icon index that covers `hicolor`-only icons |
 | `python3` | the `duck` CLI |
 | `omarchy-shell` | how the CLI talks to the plugin |
