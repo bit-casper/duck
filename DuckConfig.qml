@@ -173,8 +173,16 @@ Item {
         onLoaded: {
             const incoming = text();
 
-            // Our own write echoing back through the watcher.
-            if (incoming === root.lastWritten) return;
+            // Our own write echoing back through the watcher. Forget it once it
+            // has arrived: it has done its job, and holding on to it means that
+            // the next time the file legitimately contains that same text --
+            // someone restoring a copy of it, say -- Duck mistakes the change
+            // for its own echo and keeps running on whatever it had in memory,
+            // silently disagreeing with the file from then on.
+            if (incoming === root.lastWritten) {
+                root.lastWritten = "";
+                return;
+            }
 
             // A read that started before the write landed would hand back stale
             // content and undo it.
