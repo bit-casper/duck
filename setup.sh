@@ -12,7 +12,9 @@
 #   omarchy-menu.jsonc          Duck's menu rows, between BEGIN/END markers
 #   ~/.config/duck/config.json  settings
 #
-# ./uninstall.sh removes every one of them. Nothing else is modified.
+# ./uninstall.sh removes every one of them. Nothing else is modified. The one
+# action taken beyond those paths is restarting the Omarchy shell, and only
+# when it is found to be running older plugin code than what is on disk.
 
 set -euo pipefail
 
@@ -21,6 +23,10 @@ BIN_DIR="$HOME/.local/bin"
 HYPR_DIR="$HOME/.config/hypr"
 MENU_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/duck"
+
+# The id the shell knows this plugin by; `omarchy plugin` matches it exactly.
+PLUGIN_ID="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$REPO/manifest.json" | head -1)"
+PLUGIN_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 
 # shellcheck source=lib/config-blocks.sh
 source "$REPO/lib/config-blocks.sh"
@@ -115,10 +121,46 @@ if command -v hyprctl >/dev/null 2>&1; then
   fi
 fi
 
+# The plugin side. `omarchy plugin add` loads the dock itself, so a fresh
+# install needs nothing here. The case worth handling is a shell that was
+# already running when the plugin directory was replaced — reinstalling, or
+# checking out another branch in it, leaves the file watcher on the deleted
+# inode, and the shell goes on rendering the QML it loaded at startup.
+#
+# Restarting every time would drop the bar on runs that do not need it, so
+# look first: /proc/<pid> is stamped when the process starts, which dates the
+# code it is running against the files it was meant to load.
+
+shell_pid() {
+  local pid
+  for pid in $(pgrep -x quickshell 2>/dev/null); do
+    if tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q "omarchy/shell"; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
+shell_is_stale() {
+  local pid
+  [[ -n "$PLUGIN_ID" && -d "$PLUGIN_DIR" ]] || return 1
+  pid="$(shell_pid)" || return 1
+  [[ -n "$(find "$PLUGIN_DIR" -maxdepth 1 -name '*.qml' -newer "/proc/$pid" -print -quit 2>/dev/null)" ]]
+}
+
+if command -v omarchy >/dev/null 2>&1 && shell_is_stale; then
+  if omarchy restart shell >/dev/null 2>&1; then
+    say "restarted omarchy-shell (it was running older plugin code)"
+  else
+    say "stale    omarchy-shell is running older plugin code; run: omarchy restart shell"
+  fi
+fi
+
 echo
 echo "Ready. Next:"
 echo "  duck add ghostty      # pin an app"
 echo "  SUPER+CTRL+DOWN       # raise the dock"
 echo
 echo "If the dock is not showing, enable the plugin:"
-echo "  omarchy plugin enable duck"
+echo "  omarchy plugin enable ${PLUGIN_ID:-io.github.bit-casper.duck}"
