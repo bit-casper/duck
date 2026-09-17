@@ -115,23 +115,12 @@ Item {
         return webAppEntry(id);
     }
 
-    function matchesId(entry, appId) {
-        const target = normalize(appId);
-        if (normalize(entry.id) === target) return true;
-        if (entry.startupClass && normalize(entry.startupClass) === target) return true;
-        // Last resort: `ghostty` should still match `com.mitchellh.ghostty`.
-        return lastSegment(entry.id) === lastSegment(appId);
-    }
-
-    // Has to unwrap too, not just entryFor: without it a pinned Battle.net never
-    // claims its own running window, so the dock shows the app twice -- once
-    // pinned with the right icon, once as a stranger with the fallback one.
-    function matches(entry, appId) {
-        if (!entry || !appId) return false;
-        if (matchesId(entry, appId)) return true;
-
-        const unwrapped = unwrapLauncher(appId);
-        return unwrapped.length > 0 && matchesId(entry, unwrapped);
+    // Two things belong to the same app when they resolve to the same desktop
+    // entry. Compared by id rather than object identity: DesktopEntries owns
+    // those objects and makes no promise the same one comes back twice.
+    function sameEntry(a, b) {
+        if (!a || !b) return false;
+        return normalize(a.id) === normalize(b.id);
     }
 
     // Quickshell surfaces are shell chrome, not apps — Duck's own settings
@@ -142,12 +131,28 @@ Item {
 
     function buildItems(pinnedIds, showRunning, toplevels, entries, iconIndex) {
         const result = [];
-        const claimed = [];
         const windows = [];
 
+        // Resolve every window once, here, and let that stand for the rest of
+        // the function.
+        //
+        // There used to be a second matcher deciding whether a pinned app owned
+        // a window, and it knew less than entryFor() does: no webapp lookup, no
+        // launcher prefix. So a pinned Discord -- whose window is a Brave PWA
+        // called `brave-discord.com__channels_@me-Default` -- never claimed it,
+        // and the app appeared twice: once pinned showing no running dot, once
+        // as a stranger. Worse, the stranger could not be dragged anywhere,
+        // because pinning it found its id already in the list and gave up.
+        //
+        // One resolver cannot disagree with itself.
         const all = toplevels || [];
         for (let i = 0; i < all.length; i++) {
-            if (!isShellWindow(all[i])) windows.push(all[i]);
+            if (isShellWindow(all[i])) continue;
+            windows.push({
+                "toplevel": all[i],
+                "entry": entryFor(all[i].appId),
+                "claimed": false
+            });
         }
 
         for (let i = 0; i < pinnedIds.length; i++) {
@@ -156,10 +161,11 @@ Item {
             const mine = [];
 
             for (let w = 0; w < windows.length; w++) {
-                if (matches(entry, windows[w].appId)) {
-                    mine.push(windows[w]);
-                    claimed.push(windows[w]);
-                }
+                if (windows[w].claimed) continue;
+                if (!sameEntry(entry, windows[w].entry)) continue;
+
+                windows[w].claimed = true;
+                mine.push(windows[w].toplevel);
             }
 
             result.push({
@@ -179,34 +185,39 @@ Item {
         if (!showRunning) return result;
 
         // Group the leftover windows by app so five terminals share one dock icon.
+        // Grouped on the resolved entry rather than the raw app-id, so two
+        // windows of one app that arrive under different class names -- two PWAs
+        // of the same site, say -- still land on a single icon.
         const groups = {};
         const order = [];
 
         for (let w = 0; w < windows.length; w++) {
-            const top = windows[w];
-            if (claimed.indexOf(top) !== -1) continue;
+            if (windows[w].claimed) continue;
 
-            const key = normalize(top.appId) || "unknown";
+            const window = windows[w];
+            const key = window.entry ? "entry:" + normalize(window.entry.id)
+                                     : "appid:" + (normalize(window.toplevel.appId) || "unknown");
+
             if (!groups[key]) {
-                groups[key] = [];
+                groups[key] = { "entry": window.entry, "windows": [] };
                 order.push(key);
             }
-            groups[key].push(top);
+            groups[key].windows.push(window.toplevel);
         }
 
         for (let i = 0; i < order.length; i++) {
-            const key = order[i];
-            const group = groups[key];
-            const entry = entryFor(group[0].appId);
+            const group = groups[order[i]];
+            const entry = group.entry;
+            const first = group.windows[0];
 
             result.push({
-                "key": "run:" + key,
-                "id": entry ? entry.id : group[0].appId,
+                "key": "run:" + order[i],
+                "id": entry ? entry.id : first.appId,
                 "entry": entry,
-                "name": entry ? entry.name : (group[0].title || group[0].appId),
+                "name": entry ? entry.name : (first.title || first.appId),
                 "icon": root.icons.source(entry ? entry.icon : ""),
                 "pinned": false,
-                "windows": group,
+                "windows": group.windows,
                 "running": true,
                 "missing": false
             });
