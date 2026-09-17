@@ -234,6 +234,8 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: tipBox
+
                     visible: tip.item !== null && !drag.active
                     anchors.verticalCenter: parent.verticalCenter
 
@@ -243,7 +245,10 @@ PanelWindow {
                            row.x + (tip.item ? win.indexOf(tip.item) * win.slotSize : 0)
                              + win.slotSize / 2 - width / 2))
 
-                    implicitWidth: tipLabel.implicitWidth + Style.spacing.rowPaddingX * 2
+                    // Capped at the screen: the label is app-supplied and a long
+                    // enough name would otherwise size the tooltip past both edges.
+                    implicitWidth: Math.min(tipLabel.implicitWidth + Style.spacing.rowPaddingX * 2,
+                                            win.width - win.gap * 2)
                     implicitHeight: tipLabel.implicitHeight + Style.spacing.md * 2
                     radius: Style.cornerRadius
 
@@ -253,8 +258,20 @@ PanelWindow {
 
                     Text {
                         id: tipLabel
+
                         anchors.centerIn: parent
+                        width: tipBox.width - Style.spacing.rowPaddingX * 2
+                        elide: Text.ElideRight
+                        horizontalAlignment: Text.AlignHCenter
+
+                        // The name reaches here from a .desktop file's Name or,
+                        // for an unresolved running app, straight from the window
+                        // title — neither of which Duck controls. AutoText would
+                        // sniff those for markup and render it, so pin the format
+                        // rather than trusting what an application calls itself.
+                        textFormat: Text.PlainText
                         text: tip.item ? tip.item.name : ""
+
                         color: Color.tooltip.text
                         font.family: Style.font.family
                         font.pixelSize: Style.font.body

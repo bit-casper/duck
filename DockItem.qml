@@ -79,6 +79,7 @@ Item {
 
         Text {
             anchors.centerIn: parent
+            textFormat: Text.PlainText
             text: "?"
             color: Color.muted
             font.family: Style.font.family

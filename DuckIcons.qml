@@ -61,7 +61,10 @@ Item {
         if (name.length === 0) return root.fallback;
 
         // Desktop entries may carry an absolute path instead of a theme name.
-        if (name.indexOf("file://") === 0 || name.indexOf("image://") === 0) return name;
+        // Only a plain file is honoured: `image://` would let an entry Duck does
+        // not control address a QML image provider, and no real .desktop file has
+        // any reason to name one. Anything else falls through to theme lookup.
+        if (name.indexOf("file://") === 0) return name;
         if (name.charAt(0) === "/") return "file://" + name;
 
         const themed = Quickshell.iconPath(name, true);
