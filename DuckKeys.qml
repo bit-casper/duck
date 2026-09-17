@@ -31,6 +31,27 @@ Item {
     // that is what hypr/duck.lua used to be for.
     readonly property var keys: root.config.keys
 
+    // What each binding is called wherever the system lists it: Hyprland's own
+    // bind table, Omarchy's keybindings viewer, and the global shortcut
+    // registry. Not user text -- the keys are the user's to change, the names
+    // of the actions are Duck's.
+    //
+    // "Duck", not "Dock". The dock is what it is; Duck is what it is called.
+    readonly property var labels: ({
+        "toggle": "Duck: open or close the dock",
+        "activate": "Duck: launch the selected app",
+        "prev": "Duck: select left (grouped-window focus while closed)",
+        "next": "Duck: select right (grouped-window focus while closed)",
+        "moveprev": "Duck: move the selected app left",
+        "movenext": "Duck: move the selected app right",
+        "hide": "Duck: close the dock"
+    })
+
+    function describe(action) {
+        const label = root.labels[action];
+        return label !== undefined ? label : "Duck: " + action;
+    }
+
     // Only the actions that actually carry a key. An empty string means the
     // user cleared it, which has to read as "leave it alone", not as a bind to
     // the empty string.
@@ -58,9 +79,15 @@ Item {
         const list = root.boundIn(root.keys);
         let lua = "";
 
+        // The description is what names the binding to the rest of the system,
+        // and it is not decoration: omarchy-menu-keybindings skips any bind that
+        // has none, so without it Duck's keys are missing from the keybindings
+        // list entirely. hl.bind takes it in an options table, the same way
+        // Omarchy's own o.bind wrapper passes it.
         for (let i = 0; i < list.length; i++) {
             lua += 'hl.unbind("' + list[i].combo + '")\n';
-            lua += 'hl.bind("' + list[i].combo + '", hl.dsp.global("duck:' + list[i].action + '"))\n';
+            lua += 'hl.bind("' + list[i].combo + '", hl.dsp.global("duck:' + list[i].action + '"),'
+                 + ' { description = [[' + root.describe(list[i].action) + ']] })\n';
         }
 
         // Long brackets, not quotes: the class pattern carries a backslash that

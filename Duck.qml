@@ -108,7 +108,9 @@ Item {
         required property string action
 
         appid: "duck"
-        description: "Duck dock: " + action
+        // Same names the Hyprland bindings carry, so `hyprctl globalshortcuts`
+        // and the bind table agree with each other.
+        description: keysState.describe(action)
 
         onPressed: root.nav(action)
     }
@@ -124,7 +126,7 @@ Item {
     GlobalShortcut {
         appid: "duck"
         name: "hide"
-        description: "Duck dock: close"
+        description: keysState.describe("hide")
 
         onPressed: root.eachDock(function (dock) { dock.hide(); })
     }

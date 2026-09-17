@@ -33,8 +33,8 @@ Item {
     // No restart row. `duck restart` restarts the shell, and Omarchy already
     // offers exactly that at `update.process.shell`.
     readonly property var rows: [
-        '  "style.duck": {"icon":"󰇥","label":"Dock","description":"Duck dock settings","aliases":["duck","dock"],"action":"duck settings"},',
-        '  "trigger.toggle.duck": {"icon":"","label":"Dock","action":"duck toggle"},'
+        '  "style.duck": {"icon":"󰇥","label":"Duck","description":"Dock settings","aliases":["duck","dock"],"action":"duck settings"},',
+        '  "trigger.toggle.duck": {"icon":"","label":"Duck","action":"duck toggle"},'
     ]
 
     // Our own write echoing back through the watcher, ignored the way
